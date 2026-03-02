@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd"
+         bootstrap="vendor/autoload.php"
+         colors="true"
+>
+    <testsuites>
+        <testsuite name="Integration">
+            <directory>tests/Integration</directory>
+        </testsuite>
+    </testsuites>
+    <source>
+        <include>
+            <directory>app</directory>
+        </include>
+    </source>
+    <php>
+        <env name="APP_ENV" value="testing"/>
+        <env name="APP_MAINTENANCE_DRIVER" value="file"/>
+        <env name="BCRYPT_ROUNDS" value="4"/>
+        
+        <!-- INTEGRATION TEST CONFIGURATION (HOST MACHINE) -->
+        
+        <!-- REDIS (Real Service) -->
+        <env name="CACHE_STORE" value="redis"/>
+        <env name="QUEUE_CONNECTION" value="redis"/>
+        <env name="SESSION_DRIVER" value="redis"/>
+        <env name="REDIS_HOST" value="127.0.0.1"/>
+        <env name="REDIS_PASSWORD" value="redis"/>
+        <env name="REDIS_PORT" value="6380"/> <!-- Mapped port from .env.backend -->
+
+        <!-- S3 / MINIO (Real Service) -->
+        <env name="FILESYSTEM_DISK" value="s3"/>
+        <env name="AWS_ACCESS_KEY_ID" value="sail"/>
+        <env name="AWS_SECRET_ACCESS_KEY" value="password"/>
+        <env name="AWS_DEFAULT_REGION" value="us-east-1"/>
+        <env name="AWS_BUCKET" value="citra-matrix"/>
+        <env name="AWS_ENDPOINT" value="http://127.0.0.1:19000"/>
+        <env name="AWS_USE_PATH_STYLE_ENDPOINT" value="true"/>
+
+        <!-- REVERB (Real Service) -->
+        <env name="BROADCAST_CONNECTION" value="reverb"/>
+        <env name="REVERB_APP_ID" value="794379"/>
+        <env name="REVERB_APP_KEY" value="pyrghf57am4rz3nxssow"/>
+        <env name="REVERB_APP_SECRET" value="xufjdoxfovytixbqcibq"/>
+        <env name="REVERB_HOST" value="127.0.0.1"/>
+        <env name="REVERB_PORT" value="8080"/>
+        <env name="REVERB_SCHEME" value="http"/>
+        
+        <!-- USE REAL DB (Host: 127.0.0.1, Port: 33080->3306) -->
+        <env name="DB_CONNECTION" value="mysql"/>
+        <env name="DB_HOST" value="127.0.0.1"/>
+        <env name="DB_PORT" value="33080"/>
+        <env name="DB_DATABASE" value="matrix"/>
+        <env name="DB_USERNAME" value="admin"/>
+        <env name="DB_PASSWORD" value="admin"/>
+        <env name="MAIL_MAILER" value="array"/>
+        
+        <env name="PULSE_ENABLED" value="false"/>
+        <env name="TELESCOPE_ENABLED" value="false"/>
+        <env name="NIGHTWATCH_ENABLED" value="false"/>
+    </php>
+</phpunit>

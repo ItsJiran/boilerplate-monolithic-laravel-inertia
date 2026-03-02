@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd"
+         bootstrap="vendor/autoload.php"
+         colors="true"
+>
+    <!-- 
+        CONFIGURATION FOR RUNNING INTEGRATION TESTS INSIDE DOCKER 
+        Usage: php artisan test using phpunit-integration-docker.xml
+    -->
+    <testsuites>
+        <testsuite name="Integration">
+            <directory>tests/Integration</directory>
+        </testsuite>
+        <testsuite name="Unit">
+            <directory>tests/Unit</directory>
+        </testsuite>
+        <testsuite name="Feature">
+            <directory>tests/Feature</directory>
+        </testsuite>
+    </testsuites>
+    <source>
+        <include>
+            <directory>app</directory>
+        </include>
+    </source>
+    <php>
+        <env name="APP_ENV" value="testing"/>
+        <env name="APP_MAINTENANCE_DRIVER" value="file"/>
+        <env name="BCRYPT_ROUNDS" value="4"/>
+
+        <!-- USE REAL SERVICES (Inherit from Docker Env or set defaults) -->
+        <!-- Variables like REDIS_HOST, MINIO_ENDPOINT are already set correct in Docker container -->
+        
+        <!-- Ensure we use the 's3' disk but pointing to MinIO internally -->
+        <env name="FILESYSTEM_DISK" value="s3"/>
+        <!-- Note: AWS_ENDPOINT inside docker is usually http://minio:9000 -->
+        <env name="AWS_ENDPOINT" value="http://minio:9000"/>
+        <env name="AWS_BUCKET" value="citra-matrix"/>
+        <env name="AWS_ACCESS_KEY_ID" value="sail"/>
+        <env name="AWS_SECRET_ACCESS_KEY" value="password"/>
+        <env name="AWS_USE_PATH_STYLE_ENDPOINT" value="true"/>
+
+        <!-- Redis -->
+        <env name="REDIS_HOST" value="redis"/>
+        <env name="REDIS_PORT" value="6380"/>
+
+        <!-- Ensure Reverb uses internal host -->
+        <env name="REVERB_HOST" value="reverb"/>
+        <env name="REVERB_PORT" value="18080"/>
+        
+        <!-- USE REAL DB (Service: mariadb, Port: 3306) -->
+        <env name="DB_CONNECTION" value="mysql"/>
+        <env name="DB_HOST" value="mariadb"/>
+        <env name="DB_PORT" value="3306"/>
+        <env name="DB_DATABASE" value="matrix"/>
+        <env name="DB_USERNAME" value="admin"/>
+        <env name="DB_PASSWORD" value="admin"/>
+        <env name="MAIL_MAILER" value="array"/>
+        
+        <env name="PULSE_ENABLED" value="false"/>
+        <env name="TELESCOPE_ENABLED" value="false"/>
+        <env name="NIGHTWATCH_ENABLED" value="false"/>
+    </php>
+</phpunit>

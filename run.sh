@@ -11,7 +11,7 @@ NC='\033[0m' # No Color
 echo -e "${BLUE}"
 echo "╔═══════════════════════════════════════════════════════╗"
 echo "║                                                       ║"
-echo "║         CITRA KULINER - RUN SCRIPTS MENU             ║"
+echo "║         APP BOILERPLATE - RUN SCRIPTS MENU             ║"
 echo "║                                                       ║"
 echo "╚═══════════════════════════════════════════════════════╝"
 echo -e "${NC}"

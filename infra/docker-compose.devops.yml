@@ -20,7 +20,7 @@ services:
       - .docker/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
       - grafana_data:/var/lib/grafana
     networks:
-      - citra-kuliner
+      - app
     depends_on:
       - prometheus
       - loki
@@ -49,7 +49,7 @@ services:
       - loki_data:/loki
     command: -config.file=/etc/loki/local-config.yaml -config.expand-env=true
     networks:
-      - citra-kuliner
+      - app
     restart: unless-stopped
     logging:
       driver: "json-file"
@@ -92,7 +92,7 @@ services:
         echo "Menjalankan Prometheus..."
         /bin/prometheus --config.file=/etc/prometheus/prometheus.yml
     networks:
-      - citra-kuliner
+      - app
     logging:
       driver: "json-file"
       options:
@@ -102,11 +102,14 @@ services:
 volumes:
   prometheus_data:
     driver: local
+    name: ${APP_SLUG:-app-boilerplate}-prometheus-data
   grafana_data:
     driver: local
+    name: ${APP_SLUG:-app-boilerplate}-grafana-data
   loki_data:       # Volume baru untuk data Loki
     driver: local
+    name: ${APP_SLUG:-app-boilerplate}-loki-data
 
 networks:
-  citra-kuliner:
+  app:
     external: true

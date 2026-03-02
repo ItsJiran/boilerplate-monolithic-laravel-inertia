@@ -132,7 +132,7 @@ restart_docker() {
 # --- Main Menu ---
 clear
 echo -e "${BLUE}========================================${NC}"
-echo -e "${BLUE}   CITRA KULINER - DOCKER MANAGER   ${NC}"
+echo -e "${BLUE}   APP BOILERPLATE - DOCKER MANAGER   ${NC}"
 echo -e "${BLUE}========================================${NC}"
 echo "1. Jalankan SEMUA Service (Full Stack)"
 echo "2. Pilih Service Manual (Checkbox)"

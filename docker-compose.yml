@@ -381,14 +381,19 @@ services:
 
 networks:
   app:
+    name: ${APP_NETWORK:-app_boilerplate_network}
     external: true
 
 volumes:
   app-mariadb-data:
     driver: local
+    name: ${APP_SLUG:-app-boilerplate}-mariadb-data
   app-redis-data:
     driver: local
+    name: ${APP_SLUG:-app-boilerplate}-redis-data
   app-storage:
     driver: local
+    name: ${APP_SLUG:-app-boilerplate}-storage
   app-minio-data:
     driver: local
+    name: ${APP_SLUG:-app-boilerplate}-minio-data

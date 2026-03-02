@@ -23,7 +23,7 @@ set -a; . "$ENV_FILE"; set +a
 
 # --- Konfigurasi ---
 CONTAINER_NAME="citrakuliner-step-ca"
-CA_NAME="${STEP_CA_NAME:-Citra Kuliner CA}"
+CA_NAME="${STEP_CA_NAME:-App Boilerplate CA}"
 
 SAFE_APP_NAME="${APP_NAME:-${APP_URL:-app}}"
 SAFE_APP_NAME="${SAFE_APP_NAME// /-}"

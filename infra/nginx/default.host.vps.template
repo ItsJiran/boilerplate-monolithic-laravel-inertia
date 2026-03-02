@@ -25,8 +25,8 @@ server {
     ssl_protocols TLSv1.2 TLSv1.3;
     ssl_ciphers HIGH:!aNULL:!MD5;
     
-    access_log /var/log/nginx/citrakuliner_backend_access.log;
-    error_log  /var/log/nginx/citrakuliner_backend_error.log warn;
+    access_log /var/log/nginx/app-boilerplate_backend_access.log;
+    error_log  /var/log/nginx/app-boilerplate_backend_error.log warn;
 
     location / {
         proxy_pass http://127.0.0.1:{{LOAD_BALANCER_PORT}};
@@ -56,8 +56,8 @@ server {
     ssl_protocols TLSv1.2 TLSv1.3;
     ssl_ciphers HIGH:!aNULL:!MD5;
 
-    access_log /var/log/nginx/citrakuliner_frontend_access.log;
-    error_log  /var/log/nginx/citrakuliner_frontend_error.log warn;
+    access_log /var/log/nginx/app-boilerplate_frontend_access.log;
+    error_log  /var/log/nginx/app-boilerplate_frontend_error.log warn;
 
     location / {
         proxy_pass http://127.0.0.1:{{LOAD_BALANCER_PORT}};
@@ -84,8 +84,8 @@ server {
     ssl_certificate     {{SSL_CERT_PATH}};
     ssl_certificate_key {{SSL_KEY_PATH}};
 
-    access_log /var/log/nginx/citrakuliner_phpmyadmin_access.log;
-    error_log  /var/log/nginx/citrakuliner_phpmyadmin_error.log warn;
+    access_log /var/log/nginx/app-boilerplate_phpmyadmin_access.log;
+    error_log  /var/log/nginx/app-boilerplate_phpmyadmin_error.log warn;
 
     location / {
         proxy_pass http://127.0.0.1:{{LOAD_BALANCER_PORT}};
@@ -117,8 +117,8 @@ server {
     proxy_buffering off;
     proxy_request_buffering off;
 
-    access_log /var/log/nginx/citrakuliner_s3_access.log;
-    error_log  /var/log/nginx/citrakuliner_s3_error.log warn;
+    access_log /var/log/nginx/app-boilerplate_s3_access.log;
+    error_log  /var/log/nginx/app-boilerplate_s3_error.log warn;
 
     location / {
         proxy_pass http://127.0.0.1:{{LOAD_BALANCER_PORT}};
@@ -150,8 +150,8 @@ server {
     proxy_buffering off;
     proxy_request_buffering off;
 
-    access_log /var/log/nginx/citrakuliner_s3_console_access.log;
-    error_log  /var/log/nginx/citrakuliner_s3_console_error.log warn;
+    access_log /var/log/nginx/app-boilerplate_s3_console_access.log;
+    error_log  /var/log/nginx/app-boilerplate_s3_console_error.log warn;
 
     location / {
         proxy_pass http://127.0.0.1:{{LOAD_BALANCER_PORT}};
@@ -178,8 +178,8 @@ server {
     ssl_certificate     {{SSL_CERT_PATH}};
     ssl_certificate_key {{SSL_KEY_PATH}};
 
-    access_log /var/log/nginx/citrakuliner_grafana_access.log;
-    error_log  /var/log/nginx/citrakuliner_grafana_error.log warn;
+    access_log /var/log/nginx/app-boilerplate_grafana_access.log;
+    error_log  /var/log/nginx/app-boilerplate_grafana_error.log warn;
 
     location / {
         # Grafana uses a different internal port
@@ -207,8 +207,8 @@ server {
     ssl_certificate     {{SSL_CERT_PATH}};
     ssl_certificate_key {{SSL_KEY_PATH}};
 
-    access_log /var/log/nginx/citrakuliner_reverb_access.log;
-    error_log  /var/log/nginx/citrakuliner_reverb_error.log warn;
+    access_log /var/log/nginx/app-boilerplate_reverb_access.log;
+    error_log  /var/log/nginx/app-boilerplate_reverb_error.log warn;
 
     location / {
         proxy_pass http://127.0.0.1:{{LOAD_BALANCER_PORT}};

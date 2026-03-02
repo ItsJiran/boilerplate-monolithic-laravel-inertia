@@ -28,7 +28,7 @@ version: '3.8'
 services:
   step-ca:
     image: smallstep/step-ca:latest
-    container_name: citrakuliner-step-ca
+    container_name: ${APP_SLUG:-app-boilerplate}-step-ca
     restart: unless-stopped
     
     ports:
@@ -40,7 +40,7 @@ services:
       - DOCKER_STEPCA_INIT_DNS_NAMES=${STEP_CA_DNS:-step-ca,localhost}
       - DOCKER_STEPCA_INIT_PROVISIONER_NAME=${STEP_CA_PROVISIONER:-admin}
       - DOCKER_STEPCA_INIT_PASSWORD=${STEP_CA_PASSWORD:-changeme}
-      - DOCKER_STEPCA_INIT_ADMIN_SUBJECT=${STEP_CA_ADMIN:-admin@citrakuliner.test}
+      - DOCKER_STEPCA_INIT_ADMIN_SUBJECT=${STEP_CA_ADMIN:-admin@myapp.test}
       - DOCKER_STEPCA_INIT_ADDRESS=${STEP_CA_ADDRESS:-:9000}
       - DOCKER_STEPCA_INIT_REMOTE_MANAGEMENT=true
       
@@ -50,7 +50,7 @@ services:
       - ./ssl:/ssl:rw
       
     networks:
-      - citrakuliner-network
+      - app
     
     healthcheck:
       test: ["CMD", "step", "ca", "health"]
@@ -60,14 +60,14 @@ services:
       start_period: 10s
     
     labels:
-      - "com.citrakuliner.service=step-ca"
-      - "com.citrakuliner.description=Certificate Authority Server"
+      - "com.app-boilerplate.service=step-ca"
+      - "com.app-boilerplate.description=Certificate Authority Server"
 
 networks:
-  citrakuliner-network:
+  app:
     external: true
 
 volumes:
   step-ca-data:
     driver: local
-    name: citrakuliner-step-ca-data
+    name: ${APP_SLUG:-app-boilerplate}-step-ca-data

@@ -1,8 +1,8 @@
-# CITRA KULINER APP
+# APP BOILERPLATE APP
 
 ### Description : 
 
-Citra Kuliner App is a catering management with gis tracking system and payment gateway integrated developed with high end best practice 
+App Boilerplate App is a catering management with gis tracking system and payment gateway integrated developed with high end best practice 
 included stress test..
 
 ### How To Run :

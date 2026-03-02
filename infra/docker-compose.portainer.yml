@@ -3,7 +3,7 @@ version: "3.9"
 services:
   portainer:
     image: portainer/portainer-ce:latest
-    container_name: portainer
+    container_name: ${APP_SLUG:-app-boilerplate}-portainer
     restart: unless-stopped
     ports:
       - "9000:9000"
@@ -14,3 +14,5 @@ services:
 
 volumes:
   portainer_data:
+    driver: local
+    name: ${APP_SLUG:-app-boilerplate}-portainer-data

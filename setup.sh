@@ -12,7 +12,7 @@ NC='\033[0m' # No Color
 echo -e "${CYAN}"
 echo "╔═══════════════════════════════════════════════════════╗"
 echo "║                                                       ║"
-echo "║        CITRA KULINER - SETUP SCRIPTS MENU            ║"
+echo "║        APP BOILERPLATE - SETUP SCRIPTS MENU            ║"
 echo "║                                                       ║"
 echo "╚═══════════════════════════════════════════════════════╝"
 echo -e "${NC}"

@@ -30,7 +30,7 @@ services:
       # Gunakan variabel yang sudah kita bahas
       - "${NODE_EXPORTER_ALLOWED_HOST:-127.0.0.1}:${NODE_EXPORTER_PORT:-9100}:9100"
     networks:
-      - citra-kuliner
+      - app
     logging:
       driver: "json-file"
       options:
@@ -56,7 +56,7 @@ services:
       REDIS_ADDR: "${REDIS_HOST}:${REDIS_PORT}"
       REDIS_PASSWORD: ${REDIS_PASSWORD}
     networks:
-      - citra-kuliner
+      - app
     restart: unless-stopped
     logging:
       driver: "json-file"
@@ -84,7 +84,7 @@ services:
       - '--collect.info_schema.innodb_metrics'
       - '--collect.engine_innodb_status'
     networks:
-      - citra-kuliner
+      - app
     restart: unless-stopped
     logging:
       driver: "json-file"
@@ -119,7 +119,7 @@ services:
         - /sys:/sys:ro
         - /var/lib/docker/:/var/lib/docker:ro
       networks:
-        - citra-kuliner
+        - app
       restart: unless-stopped
       logging:
         driver: "json-file"
@@ -146,7 +146,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
     command: -config.file=/etc/promtail/config.yml -config.expand-env=true
     networks:
-      - citra-kuliner
+      - app
     restart: unless-stopped
     logging:
       driver: "json-file"
@@ -173,7 +173,7 @@ services:
           cpus: '${NGINX_EXPORTER_CPU_LIMIT:-0}'    # Only 5% of one CPU core
           memory: '${NGINX_EXPORTER_MEM_LIMIT:-0b}'    # Hard cap at 32 Megabytes
     networks:
-      - citra-kuliner
+      - app
     logging:
       driver: "json-file"
       options:
@@ -181,5 +181,5 @@ services:
         max-file: "2"     # Maksimal 2 file (total 10MB)
 
 networks:
-  citra-kuliner:
+  app:
     external: true

@@ -2,7 +2,7 @@
 
 ## Overview
 
-Citra Kuliner uses **Let's Encrypt** for SSL certificates in **PRODUCTION** environment.
+App Boilerplate uses **Let's Encrypt** for SSL certificates in **PRODUCTION** environment.
 
 Let's Encrypt provides free, automated, and trusted SSL/TLS certificates for public domains.
 
@@ -15,7 +15,7 @@ Let's Encrypt provides free, automated, and trusted SSL/TLS certificates for pub
 
 ## Prerequisites
 
-1. **Public Domain**: You must own a domain (e.g., `citrakuliner.com`)
+1. **Public Domain**: You must own a domain (e.g., `myapp.test`)
 2. **DNS Configuration**: Domain must point to your server's IP
 3. **Port 80 & 443**: Must be open and accessible from internet
 4. **Email Address**: For certificate expiration notifications
@@ -39,10 +39,10 @@ sudo yum install certbot python3-certbot-nginx
 
 ```bash
 # For single domain
-sudo certbot --nginx -d citrakuliner.com -d www.citrakuliner.com
+sudo certbot --nginx -d myapp.test -d www.myapp.test
 
 # For wildcard (requires DNS challenge)
-sudo certbot --nginx -d citrakuliner.com -d *.citrakuliner.com --manual --preferred-challenges dns
+sudo certbot --nginx -d myapp.test -d *.myapp.test --manual --preferred-challenges dns
 ```
 
 #### Auto-Renewal
@@ -65,7 +65,7 @@ version: '3.8'
 services:
   certbot:
     image: certbot/certbot:latest
-    container_name: citrakuliner-certbot
+    container_name: app-boilerplate-certbot
     volumes:
       - ./ssl/certbot/conf:/etc/letsencrypt
       - ./ssl/certbot/www:/var/www/certbot
@@ -84,9 +84,9 @@ services:
 # Get certificate
 docker-compose run --rm certbot certonly --webroot \
   -w /var/www/certbot \
-  -d citrakuliner.com \
-  -d www.citrakuliner.com \
-  --email admin@citrakuliner.com \
+  -d myapp.test \
+  -d www.myapp.test \
+  --email admin@myapp.test \
   --agree-tos \
   --no-eff-email
 
@@ -104,7 +104,7 @@ version: '3.8'
 services:
   traefik:
     image: traefik:v2.10
-    container_name: citrakuliner-traefik
+    container_name: app-boilerplate-traefik
     restart: unless-stopped
     ports:
       - "80:80"
@@ -119,7 +119,7 @@ services:
       - "--entrypoints.websecure.address=:443"
       
       # Let's Encrypt
-      - "--certificatesresolvers.letsencrypt.acme.email=admin@citrakuliner.com"
+      - "--certificatesresolvers.letsencrypt.acme.email=admin@myapp.test"
       - "--certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json"
       - "--certificatesresolvers.letsencrypt.acme.httpchallenge=true"
       - "--certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=web"
@@ -140,7 +140,7 @@ services:
     image: your-app
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.app.rule=Host(`citrakuliner.com`)"
+      - "traefik.http.routers.app.rule=Host(`myapp.test`)"
       - "traefik.http.routers.app.entrypoints=websecure"
       - "traefik.http.routers.app.tls.certresolver=letsencrypt"
 ```
@@ -150,12 +150,12 @@ services:
 ### Production Nginx Config
 
 ```nginx
-# /etc/nginx/sites-available/citrakuliner.com
+# /etc/nginx/sites-available/myapp.test
 
 # HTTP - Redirect to HTTPS
 server {
     listen 80;
-    server_name citrakuliner.com www.citrakuliner.com;
+    server_name myapp.test www.myapp.test;
     
     # Let's Encrypt challenge
     location /.well-known/acme-challenge/ {
@@ -171,11 +171,11 @@ server {
 # HTTPS
 server {
     listen 443 ssl http2;
-    server_name citrakuliner.com www.citrakuliner.com;
+    server_name myapp.test www.myapp.test;
     
     # SSL Configuration
-    ssl_certificate /etc/letsencrypt/live/citrakuliner.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/citrakuliner.com/privkey.pem;
+    ssl_certificate /etc/letsencrypt/live/myapp.test/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/myapp.test/privkey.pem;
     
     # SSL Security Settings
     ssl_protocols TLSv1.2 TLSv1.3;
@@ -207,13 +207,13 @@ USE_SSL=true
 SSL_PROVIDER=letsencrypt
 
 # Let's Encrypt
-CERTBOT_EMAIL=admin@citrakuliner.com
-DOMAIN=citrakuliner.com
+CERTBOT_EMAIL=admin@myapp.test
+DOMAIN=myapp.test
 CERTBOT_WEBROOT=/var/www/certbot
 
 # SSL Certificate Paths (Let's Encrypt default)
-SSL_CERT_PATH=/etc/letsencrypt/live/citrakuliner.com/fullchain.pem
-SSL_KEY_PATH=/etc/letsencrypt/live/citrakuliner.com/privkey.pem
+SSL_CERT_PATH=/etc/letsencrypt/live/myapp.test/fullchain.pem
+SSL_KEY_PATH=/etc/letsencrypt/live/myapp.test/privkey.pem
 
 # Force HTTPS
 FORCE_HTTPS=true
@@ -228,7 +228,7 @@ FORCE_HTTPS=true
 sudo certbot certificates
 
 # Check expiration
-openssl x509 -in /etc/letsencrypt/live/citrakuliner.com/cert.pem -noout -dates
+openssl x509 -in /etc/letsencrypt/live/myapp.test/cert.pem -noout -dates
 ```
 
 ### Manual Renewal
@@ -248,7 +248,7 @@ sudo certbot renew && sudo systemctl reload nginx
 
 ```bash
 # If compromised
-sudo certbot revoke --cert-path /etc/letsencrypt/live/citrakuliner.com/cert.pem
+sudo certbot revoke --cert-path /etc/letsencrypt/live/myapp.test/cert.pem
 ```
 
 ## Monitoring & Alerts
@@ -263,7 +263,7 @@ sudo certbot revoke --cert-path /etc/letsencrypt/live/citrakuliner.com/cert.pem
 #!/bin/bash
 # check-ssl-expiry.sh
 
-DOMAIN="citrakuliner.com"
+DOMAIN="myapp.test"
 DAYS_THRESHOLD=30
 
 expiry_date=$(openssl s_client -connect $DOMAIN:443 -servername $DOMAIN 2>/dev/null \
@@ -302,8 +302,8 @@ Let's Encrypt has rate limits (50 certificates per domain per week).
 **Solution**:
 ```bash
 # Verify DNS propagation
-dig citrakuliner.com
-nslookup citrakuliner.com
+dig myapp.test
+nslookup myapp.test
 
 # Wait for DNS to propagate (can take up to 48 hours)
 ```
@@ -363,10 +363,10 @@ sed -i 's/SSL_PROVIDER=step-ca/SSL_PROVIDER=letsencrypt/' .env.production
 
 ```bash
 # Copy production nginx config
-cp infra/nginx/default.host.vps.template /etc/nginx/sites-available/citrakuliner.com
+cp infra/nginx/default.host.vps.template /etc/nginx/sites-available/myapp.test
 
 # Enable site
-sudo ln -s /etc/nginx/sites-available/citrakuliner.com /etc/nginx/sites-enabled/
+sudo ln -s /etc/nginx/sites-available/myapp.test /etc/nginx/sites-enabled/
 
 # Test and reload
 sudo nginx -t
@@ -376,17 +376,17 @@ sudo systemctl reload nginx
 ### 3. Get Certificate
 
 ```bash
-sudo certbot --nginx -d citrakuliner.com -d www.citrakuliner.com
+sudo certbot --nginx -d myapp.test -d www.myapp.test
 ```
 
 ### 4. Verify
 
 ```bash
 # Test HTTPS
-curl -I https://citrakuliner.com
+curl -I https://myapp.test
 
 # Check SSL certificate
-openssl s_client -connect citrakuliner.com:443 -servername citrakuliner.com
+openssl s_client -connect myapp.test:443 -servername myapp.test
 ```
 
 ## Resources

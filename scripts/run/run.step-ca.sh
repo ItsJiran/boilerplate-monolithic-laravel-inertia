@@ -42,7 +42,7 @@ set +a
 
 # Set default values if not in .env
 export STEP_CA_PORT=${STEP_CA_PORT:-9000}
-export STEP_CA_NAME=${STEP_CA_NAME:-"Citra Kuliner CA"}
+export STEP_CA_NAME=${STEP_CA_NAME:-"App Boilerplate CA"}
 export STEP_CA_DNS=${STEP_CA_DNS:-"step-ca,localhost"}
 export STEP_CA_PROVISIONER=${STEP_CA_PROVISIONER:-"admin"}
 export STEP_CA_PASSWORD=${STEP_CA_PASSWORD:-"changeme"}
@@ -51,9 +51,9 @@ export STEP_CA_ADDRESS=${STEP_CA_ADDRESS:-":9000"}
 
 # Check if network exists
 echo -e "${BLUE}Checking Docker network...${NC}"
-if ! docker network inspect citrakuliner-network >/dev/null 2>&1; then
-    echo -e "${YELLOW}Creating citrakuliner-network...${NC}"
-    docker network create citrakuliner-network
+if ! docker network inspect ${APP_NETWORK:-app_boilerplate_network} >/dev/null 2>&1; then
+    echo -e "${YELLOW}Creating ${APP_NETWORK:-app_boilerplate_network}...${NC}"
+    docker network create ${APP_NETWORK:-app_boilerplate_network}
     if [ $? -eq 0 ]; then
         echo -e "${GREEN}✓ Network created successfully${NC}"
     else

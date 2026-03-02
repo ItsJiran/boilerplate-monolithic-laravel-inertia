@@ -38,7 +38,7 @@ STEP_CA_NAME="Citra Kuliner CA"
 STEP_CA_DNS="step-ca,localhost"
 STEP_CA_PROVISIONER="admin"
 STEP_CA_PASSWORD="changeme"           # ⚠️ CHANGE THIS IN PRODUCTION!
-STEP_CA_ADMIN="admin@citrakuliner.test"
+STEP_CA_ADMIN="admin@myapp.test"
 STEP_CA_ADDRESS=":9000"
 ```
 
@@ -65,7 +65,7 @@ docker-compose -f docker-compose.step-ca.yml up -d
 
 Get the CA fingerprint:
 ```bash
-docker exec citrakuliner-step-ca step certificate fingerprint /home/step/certs/root_ca.crt
+docker exec ${APP_SLUG:-app-boilerplate}-step-ca step certificate fingerprint /home/step/certs/root_ca.crt
 ```
 
 Bootstrap your Step CLI:
@@ -84,7 +84,7 @@ curl -k https://localhost:9000/health
 
 ### View CA Certificates
 ```bash
-docker exec citrakuliner-step-ca step certificate inspect /home/step/certs/root_ca.crt
+docker exec ${APP_SLUG:-app-boilerplate}-step-ca step certificate inspect /home/step/certs/root_ca.crt
 ```
 
 ### Request a New Certificate
@@ -99,14 +99,14 @@ step ca renew myapp.crt myapp.key
 
 ### List Active Certificates
 ```bash
-docker exec citrakuliner-step-ca step ca provisioner list
+docker exec ${APP_SLUG:-app-boilerplate}-step-ca step ca provisioner list
 ```
 
 ## Management Commands
 
 ### View Logs
 ```bash
-docker logs -f citrakuliner-step-ca
+docker logs -f ${APP_SLUG:-app-boilerplate}-step-ca
 ```
 
 ### Stop Server
@@ -166,7 +166,7 @@ For production deployment, Citra Kuliner uses **Let's Encrypt** for SSL certific
 - ✅ **Trusted by all browsers** - No certificate warnings
 - ✅ **Free and automatic** - No manual certificate management
 - ✅ **Auto-renewal** - Certificates renew automatically before expiration
-- ✅ **Wildcard support** - Single cert for *.citrakuliner.com
+- ✅ **Wildcard support** - Single cert for *.myapp.test
 - ✅ **Industry standard** - Used by millions of websites
 
 ### Production Setup (Let's Encrypt)
@@ -177,7 +177,7 @@ For production deployment, Citra Kuliner uses **Let's Encrypt** for SSL certific
    sudo apt install certbot python3-certbot-nginx
    
    # Get certificate
-   sudo certbot --nginx -d citrakuliner.com -d www.citrakuliner.com
+   sudo certbot --nginx -d myapp.test -d www.myapp.test
    
    # Auto-renewal (cron job is set automatically)
    sudo certbot renew --dry-run
@@ -199,7 +199,7 @@ For production deployment, Citra Kuliner uses **Let's Encrypt** for SSL certific
    traefik:
      image: traefik:v2.10
      command:
-       - "--certificatesresolvers.letsencrypt.acme.email=admin@citrakuliner.com"
+       - "--certificatesresolvers.letsencrypt.acme.email=admin@myapp.test"
        - "--certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json"
        - "--certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=web"
    ```
@@ -215,8 +215,8 @@ CA_URL=https://localhost:9000
 # .env.production
 USE_STEP_CA=false
 SSL_PROVIDER=letsencrypt
-CERTBOT_EMAIL=admin@citrakuliner.com
-DOMAIN=citrakuliner.com
+CERTBOT_EMAIL=admin@myapp.test
+DOMAIN=myapp.test
 ```
 
 ## Security Notes
@@ -232,11 +232,11 @@ DOMAIN=citrakuliner.com
 
 ```bash
 # Backup
-docker run --rm -v citrakuliner-step-ca-data:/data -v $(pwd):/backup \
+docker run --rm -v ${APP_SLUG:-app-boilerplate}-step-ca-data:/data -v $(pwd):/backup \
   alpine tar czf /backup/step-ca-backup.tar.gz -C /data .
 
 # Restore
-docker run --rm -v citrakuliner-step-ca-data:/data -v $(pwd):/backup \
+docker run --rm -v ${APP_SLUG:-app-boilerplate}-step-ca-data:/data -v $(pwd):/backup \
   alpine tar xzf /backup/step-ca-backup.tar.gz -C /data
 ```
 
@@ -251,7 +251,7 @@ docker run --rm -v citrakuliner-step-ca-data:/data -v $(pwd):/backup \
 
 2. View logs:
    ```bash
-   docker logs citrakuliner-step-ca
+   docker logs ${APP_SLUG:-app-boilerplate}-step-ca
    ```
 
 3. Verify network exists:
@@ -289,6 +289,6 @@ docker run --rm -v citrakuliner-step-ca-data:/data -v $(pwd):/backup \
 ## Support
 
 For issues or questions:
-1. Check logs: `docker logs citrakuliner-step-ca`
+1. Check logs: `docker logs ${APP_SLUG:-app-boilerplate}-step-ca`
 2. Review [Step CA Troubleshooting Guide](https://smallstep.com/docs/step-ca/troubleshooting)
 3. Contact: Akterma Technology [AT] - ItsJiran

@@ -1,18 +1,20 @@
 #!/bin/bash
 
 # --- 1. Load Variable dari .env ---
-# Script akan mencari .env di folder yang sama dengan script ini dijalankan
-if [ -f .env ]; then
-    export $(grep -v '^#' .env | xargs)
-else
-    echo "❌ Error: File .env tidak ditemukan! Pastikan Anda menjalankan script di folder yg ada .env nya."
-    exit 1
-fi
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(dirname "$(dirname "$SCRIPT_DIR")")"
+
+# Load env files using safe pattern (consistent with other scripts)
+set -a
+[ -f "$ROOT_DIR/.env" ] && source "$ROOT_DIR/.env"
+[ -f "$ROOT_DIR/.env.backend" ] && source "$ROOT_DIR/.env.backend"
+[ -f "$ROOT_DIR/.env.devops" ] && source "$ROOT_DIR/.env.devops"
+set +a
 
 dump_env_var() {
     local key="$1"
     local entry
-    entry="$(grep -nE "^${key}=" .env | head -n1)"
+    entry="$(grep -nE "^${key}=" "$ROOT_DIR/.env" | head -n1)"
 
     if [ -n "$entry" ]; then
         echo "  ${entry}"
@@ -21,24 +23,9 @@ dump_env_var() {
     fi
 }
 
-if [ -f .env.backend ]; then
-    export $(grep -v '^#' .env.backend | xargs)
-else
-    echo "❌ Error: File .env.backend tidak ditemukan! Pastikan Anda menjalankan script di folder yg ada .env.backend nya."
-    exit 1
-fi
-
-
-if [ -f .env.devops ]; then
-    export $(grep -v '^#' .env.devops | xargs)
-else
-    echo "❌ Error: File .env.devops tidak ditemukan! Pastikan Anda menjalankan script di folder yg ada .env.devops nya."
-    exit 1
-fi
-
 # Cek apakah variable penting ada
 if [ -z "$APP_URL" ]; then
-    echo "❌ Error: Variable DOMAIN_NAME atau APP_PORT belum diisi di .env"
+    echo "❌ Error: Variable APP_URL belum diisi di .env"
     exit 1
 fi
 
@@ -47,9 +34,14 @@ dump_env_var "SSL_CERT_PATH"
 dump_env_var "SSL_KEY_PATH"
 
 # --- 2. Konfigurasi Path ---
-TEMPLATE_FILE="./default.host.conf.template"
+TEMPLATE_FILE="$ROOT_DIR/infra/nginx/default.host.vps.template"
 TARGET_FILE="/etc/nginx/sites-available/$APP_URL"
 SYMLINK_FILE="/etc/nginx/sites-enabled/$APP_URL"
+
+if [ ! -f "$TEMPLATE_FILE" ]; then
+    echo "❌ Error: Template file tidak ditemukan di $TEMPLATE_FILE"
+    exit 1
+fi
 
 echo "⚙️  Sedang men-generate config Nginx untuk: $APP_URL..."
 
@@ -79,6 +71,7 @@ apply_replace "GRAFANA_PORT" "$GRAFANA_PORT"
 apply_replace "LOAD_BALANCER_PORT" "$LOAD_BALANCER_PORT"
 apply_replace "SSL_CERT_PATH" "$SSL_CERT_PATH"
 apply_replace "SSL_KEY_PATH" "$SSL_KEY_PATH"
+apply_replace "REVERB_URL" "$REVERB_URL"
 
 # Pindahkan file yang sudah jadi ke target
 sudo mv temp_nginx.conf "$TARGET_FILE"
@@ -98,7 +91,7 @@ if [ ! -f "$SYMLINK_FILE" ]; then
 fi
 
 # Ensure 
-sudo restorecon -Rv /etc/nginx/
+sudo restorecon -Rv /etc/nginx/ 2>/dev/null || true
 
 echo "tesss config..."
 sudo nginx -t
@@ -106,8 +99,7 @@ sudo nginx -t
 if [ $? -eq 0 ]; then
     echo "✅ Config Valid! Reloading Nginx..."
     sudo systemctl reload nginx
-    echo "🎉 Selesai! Website http://$APP_URL siap diakses."
-    echo "👉 Langkah selanjutnya: Jalankan 'sudo certbot --nginx -d $APP_URL' untuk HTTPS."
+    echo "🎉 Selesai! Website https://$APP_URL siap diakses."
 else
     echo "❌ Config Nginx Error. Cek file config manual."
 fi

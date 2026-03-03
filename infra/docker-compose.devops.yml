@@ -49,7 +49,7 @@ services:
       - loki_data:/loki
     command: -config.file=/etc/loki/local-config.yaml -config.expand-env=true
     networks:
-      - app
+      - app_network
     restart: unless-stopped
     logging:
       driver: "json-file"
@@ -92,7 +92,7 @@ services:
         echo "Menjalankan Prometheus..."
         /bin/prometheus --config.file=/etc/prometheus/prometheus.yml
     networks:
-      - app
+      - app_network
     logging:
       driver: "json-file"
       options:
@@ -111,5 +111,6 @@ volumes:
     name: ${APP_SLUG:-app-boilerplate}-loki-data
 
 networks:
-  app:
+  app_network:
+    name: ${APP_NETWORK:-app_boilerplate_network}
     external: true

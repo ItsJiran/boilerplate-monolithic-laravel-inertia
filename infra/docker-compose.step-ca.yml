@@ -36,7 +36,7 @@ services:
     
     environment:
       # Step CA Configuration
-      - DOCKER_STEPCA_INIT_NAME=${STEP_CA_NAME:-Citra Kuliner CA}
+      - DOCKER_STEPCA_INIT_NAME=${STEP_CA_NAME:-App CA}
       - DOCKER_STEPCA_INIT_DNS_NAMES=${STEP_CA_DNS:-step-ca,localhost}
       - DOCKER_STEPCA_INIT_PROVISIONER_NAME=${STEP_CA_PROVISIONER:-admin}
       - DOCKER_STEPCA_INIT_PASSWORD=${STEP_CA_PASSWORD:-changeme}
@@ -50,7 +50,7 @@ services:
       - ./ssl:/ssl:rw
       
     networks:
-      - app
+      - app_network
     
     healthcheck:
       test: ["CMD", "step", "ca", "health"]
@@ -64,7 +64,8 @@ services:
       - "com.app-boilerplate.description=Certificate Authority Server"
 
 networks:
-  app:
+  app_network:
+    name: ${APP_NETWORK:-app_boilerplate_network}
     external: true
 
 volumes:

@@ -19,7 +19,7 @@ services:
       - app-mariadb-data:/var/lib/mysql
       # - ./my.cnf:/etc/mysql/conf.d/custom.cnf:ro
     networks:
-      - app
+      - app_network
     healthcheck:
       test: ["CMD", "mariadb-admin", "ping", "-h", "mariadb", "-u", "root", "-p${DB_ROOT_PASSWORD:-root}"]
       interval: 10s
@@ -35,7 +35,7 @@ services:
   db-init:
     image: mariadb:latest
     networks:
-      - app
+      - app_network
     depends_on:
       mariadb:
         condition: service_healthy
@@ -102,7 +102,7 @@ services:
     expose:
       - "80"
     networks:
-      - app
+      - app_network
     depends_on:
       mariadb:
         condition: service_healthy
@@ -126,7 +126,7 @@ services:
     volumes:
       - app-redis-data:/data
     networks:
-      - app
+      - app_network
     healthcheck:
       test: ["CMD", "redis-cli","-p","${REDIS_PORT}" , "ping"]
       interval: 10s
@@ -157,7 +157,7 @@ services:
       - ./.env.backend
       - ./.env.devops
     networks:
-      - app
+      - app_network
     restart: unless-stopped
     working_dir: /var/www/html
     logging:
@@ -183,7 +183,7 @@ services:
       - ./.env.backend
       - ./.env.devops
     networks:
-      - app
+      - app_network
     restart: unless-stopped
     working_dir: /var/www/html
     logging:
@@ -209,7 +209,7 @@ services:
       - ./.env.backend
       - ./.env.devops
     networks:
-      - app
+      - app_network
     restart: unless-stopped
     working_dir: /var/www/html
     logging:
@@ -233,7 +233,7 @@ services:
       - ./.env.backend
       - ./.env.devops 
     networks:
-      - app
+      - app_network
     # restart: unless-stopped # Cron jangan restart policy strict jika exit code 0 (though schedule:work runs forever)
     restart: unless-stopped
     working_dir: /var/www/html
@@ -263,7 +263,7 @@ services:
     expose:
       - "${CLIENT_PORT}"
     networks:
-      - app
+      - app_network
     extra_hosts:
       - "${APP_URL}:host-gateway"
       - "${API_URL}:${API_EXTRA_HOST}"
@@ -291,7 +291,7 @@ services:
       - ./.docker/nginx/default.conf.template:/etc/nginx/templates/default.conf.template:ro,Z
       - /etc/letsencrypt:/etc/letsencrypt
     networks:
-      - app
+      - app_network
     restart: unless-stopped
     logging:
       driver: "json-file"
@@ -328,7 +328,7 @@ services:
       - app-minio-data:/data
     command: minio server /data --console-address ":${MINIO_CONSOLE_PORT}" --address ":${MINIO_PORT}"
     networks:
-      - app
+      - app_network
     extra_hosts:
       - "${S3_URL}:host-gateway"
       - "${S3_CONSOLE_URL}:host-gateway"
@@ -346,7 +346,7 @@ services:
     depends_on:
       - minio
     networks:
-      - app
+      - app_network
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-sail}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-password}
@@ -380,7 +380,7 @@ services:
         exit 0
 
 networks:
-  app:
+  app_network:
     name: ${APP_NETWORK:-app_boilerplate_network}
     external: true
 

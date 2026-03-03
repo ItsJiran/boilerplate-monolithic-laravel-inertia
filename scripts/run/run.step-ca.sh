@@ -51,7 +51,7 @@ export STEP_CA_ADDRESS=${STEP_CA_ADDRESS:-":9000"}
 
 # Check if network exists
 echo -e "${BLUE}Checking Docker network...${NC}"
-if ! docker network inspect ${APP_NETWORK:-app_boilerplate_network} >/dev/null 2>&1; then
+if ! docker network inspect ${APP_NETWORK:-app_boilerplate_network} >/dev/null; then
     echo -e "${YELLOW}Creating ${APP_NETWORK:-app_boilerplate_network}...${NC}"
     docker network create ${APP_NETWORK:-app_boilerplate_network}
     if [ $? -eq 0 ]; then
@@ -105,6 +105,7 @@ echo ""
 
 # Start Docker Compose
 cd "$INFRA_DIR"
+echo "$INFRA_DIR"
 docker compose -f docker-compose.step-ca.yml up -d
 
 if [ $? -eq 0 ]; then
@@ -123,7 +124,7 @@ if [ $? -eq 0 ]; then
     echo -e "  Restart:        ${BLUE}cd $INFRA_DIR && docker compose -f docker-compose.step-ca.yml restart${NC}"
     echo ""
     echo -e "${YELLOW}Initialize Step CLI (first time):${NC}"
-    echo -e "  ${BLUE}step-cli ca bootstrap --ca-url https://localhost:$STEP_CA_PORT --fingerprint \$(docker exec citrakuliner-step-ca step certificate fingerprint /home/step/certs/root_ca.crt)${NC}"
+    echo -e "  ${BLUE}step-cli ca bootstrap --ca-url https://localhost:$STEP_CA_PORT --fingerprint \$(docker exec ${APP_SLUG:-app-boilerplate}-step-ca step certificate fingerprint /home/step/certs/root_ca.crt)${NC}"
     echo -e "${CYAN}═══════════════════════════════════════════════════════${NC}"
     echo ""
     

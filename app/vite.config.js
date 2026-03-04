@@ -31,8 +31,8 @@ export default defineConfig(({ mode }) => {
             strictPort: true,
             hmr: {
                 protocol: 'wss',
-                host: 'app.test',
-                clientPort: 5174,
+                host: 'myapp.test',
+                clientPort: env.VITE_LOAD_BALANCER_HMR_PORT || 5174,
             },
         },
         plugins: [

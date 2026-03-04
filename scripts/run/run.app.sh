@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # =========================================================
-# DOCKER COMPOSE MANAGER (CHECKBOX STYLE)
+# CITRA KULINER - DOCKER COMPOSE MANAGER (STACK VERSION)
 # =========================================================
 
 # --- Konfigurasi Warna ---
@@ -9,11 +9,26 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
+CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
-# --- Script Directory & Root ---
-SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-ROOT_DIR="$(dirname "$(dirname "$SCRIPT_DIR")")"
+# --- Konfigurasi Target File & Stack (Namespace) ---
+DEFAULT_FILE="docker-compose.yml"
+DEFAULT_STACK="myapp" 
+
+echo -e "${YELLOW}--- Konfigurasi Project ---${NC}"
+read -p "Masukkan nama file (Default: $DEFAULT_FILE): " INPUT_FILE
+COMPOSE_FILE=${INPUT_FILE:-$DEFAULT_FILE}
+
+read -p "Masukkan nama Stack/Project (Default: $DEFAULT_STACK): " INPUT_STACK
+STACK_NAME=${INPUT_STACK:-$DEFAULT_STACK}
+
+export COMPOSE_PROJECT_NAME=$STACK_NAME
+
+if [ ! -f "$COMPOSE_FILE" ]; then
+    echo -e "${RED}[ERROR] File '$COMPOSE_FILE' tidak ditemukan!${NC}"
+    exit 1
+fi
 
 # --- Daftar Service Sesuai docker compose.yml ---
 SERVICES=(
@@ -31,32 +46,64 @@ SERVICES=(
     "createbuckets"
 )
 
-# Status awal checkbox (0 = unselected, 1 = selected)
-SELECTED=()
-for i in "${!SERVICES[@]}"; do SELECTED[$i]=0; done
+# --- Daftar Volume ---
+VOLUMES=(
+    "myapp-data"
+    "myapp-mariadb-data"
+    "myapp-redis-data"
+    "myapp-storage"
+    "myapp-minio-data"
+)
 
 # --- Fungsi Load Environment ---
 load_envs() {
-    echo -e "${BLUE}[INFO] Loading environment variables from root project...${NC}"
     set -a
-    [ -f "$ROOT_DIR/.env" ] && source "$ROOT_DIR/.env"
-    [ -f "$ROOT_DIR/.env.backend" ] && source "$ROOT_DIR/.env.backend"
-    [ -f "$ROOT_DIR/.env.devops" ] && source "$ROOT_DIR/.env.devops"
+    [ -f .env ] && source .env
+    [ -f .env.backend ] && source .env.backend
+    [ -f .env.devops ] && source .env.devops
     set +a
 }
 
+# --- Fungsi Cek/Buat Volume (Silently) ---
+check_volumes() {
+    return 0 
+}
+
+# --- Fungsi Manajemen Volume (Recreate) ---
+manage_volumes() {
+    echo -e "${RED}=== MANAJEMEN VOLUME STACK: $STACK_NAME ===${NC}"
+    echo -e "${YELLOW}PERINGATAN: Menghapus volume akan menghapus SEMUA data!${NC}"
+    echo "------------------------------------------------"
+    for i in "${!VOLUMES[@]}"; do
+        echo -e "[$i] ${STACK_NAME}_${VOLUMES[$i]}"
+    done
+    echo "------------------------------------------------"
+    read -p "Pilih angka untuk RECREATE (kosongkan untuk batal): " vol_idx
+
+    if [[ -n "$vol_idx" ]] && [[ "$vol_idx" =~ ^[0-9]+$ ]] && [ "$vol_idx" -lt "${#VOLUMES[@]}" ]; then
+        TARGET_VOL="${STACK_NAME}_${VOLUMES[$vol_idx]}"
+        echo -e "${RED}[!] Menghapus volume $TARGET_VOL...${NC}"
+        docker volume rm "$TARGET_VOL" 2>/dev/null
+        echo -e "${GREEN}[+] Membuat ulang volume $TARGET_VOL...${NC}"
+        docker volume create "$TARGET_VOL"
+        read -p "Selesai. Tekan Enter untuk kembali."
+    fi
+}
+
+# --- Fungsi Tampilan Checkbox ---
 show_checkboxes() {
     local action_label="$1"
-    clear
-    echo -e "${YELLOW}=== PILIH SERVICE UNTUK: ${action_label^^} ===${NC}"
-    echo "Ketik angka untuk (Un)Select, ketik 'a' untuk All, ketik 'r' untuk RUN."
+    local -n arr_ref=$2
+    local -n sel_ref=$3
+    echo -e "${YELLOW}=== STACK: $STACK_NAME | FILE: $COMPOSE_FILE ===${NC}"
+    echo -e "${YELLOW}=== PILIH SERVICE UNTUK ${action_label^^} ===${NC}"
+    echo "Ketik angka untuk (Un)Select, ketik 'a' untuk All, ketik 'r' untuk eksekusi."
     echo "------------------------------------------------"
-
-    for i in "${!SERVICES[@]}"; do
-        if [[ ${SELECTED[$i]} -eq 1 ]]; then
-            echo -e "[$i] [${GREEN}x${NC}] ${SERVICES[$i]}"
+    for i in "${!arr_ref[@]}"; do
+        if [[ ${sel_ref[$i]} -eq 1 ]]; then
+            echo -e "[$i] [${GREEN}x${NC}] ${arr_ref[$i]}"
         else
-            echo -e "[$i] [ ] ${SERVICES[$i]}"
+            echo -e "[$i] [ ] ${arr_ref[$i]}"
         fi
     done
     echo "------------------------------------------------"
@@ -66,127 +113,155 @@ show_checkboxes() {
 service_selector() {
     local action_label="$1"
     local action_fn="$2"
+    SELECTED_SVC=()
+    for i in "${!SERVICES[@]}"; do SELECTED_SVC[$i]=0; done
 
     while true; do
-        show_checkboxes "$action_label"
+        show_checkboxes "$action_label" SERVICES SELECTED_SVC
         read -p "Pilihan Anda (angka/a/r): " input
-
         [[ -z "$input" ]] && continue
-
-        if [[ "$input" == "r" ]]; then
-            break
+        if [[ "$input" == "r" ]]; then break
         elif [[ "$input" == "a" ]]; then
-            for i in "${!SERVICES[@]}"; do SELECTED[$i]=1; done
+            for i in "${!SERVICES[@]}"; do SELECTED_SVC[$i]=1; done
         elif [[ "$input" =~ ^[0-9]+$ ]] && [ "$input" -ge 0 ] && [ "$input" -lt "${#SERVICES[@]}" ]; then
-            if [[ ${SELECTED[$input]} -eq 1 ]]; then
-                SELECTED[$input]=0
-            else
-                SELECTED[$input]=1
-            fi
+            [[ ${SELECTED_SVC[$input]} -eq 1 ]] && SELECTED_SVC[$input]=0 || SELECTED_SVC[$input]=1
         fi
     done
 
     CMD_SERVICES=""
-    COUNT=0
     for i in "${!SERVICES[@]}"; do
-        if [[ ${SELECTED[$i]} -eq 1 ]]; then
-            CMD_SERVICES="$CMD_SERVICES ${SERVICES[$i]}"
-            ((COUNT++))
-        fi
+        [[ ${SELECTED_SVC[$i]} -eq 1 ]] && CMD_SERVICES="$CMD_SERVICES ${SERVICES[$i]}"
     done
 
-    if [[ $COUNT -eq 0 ]]; then
-        echo -e "${RED}[ERROR] Tidak ada service yang dipilih!${NC}"
-        # Jangan exit, return saja agar balik ke menu atau bisa coba lagi
-        read -p "Tekan enter untuk kembali..."
-        return 
+    if [[ -n "$CMD_SERVICES" ]]; then
+        "$action_fn" "$CMD_SERVICES"
+    else
+        echo -e "${RED}[ERROR] Tidak ada yang dipilih!${NC}"
+        sleep 1
+    fi
+}
+
+# --- FUNGSI UTAMA DOCKER ---
+
+run_docker() {
+    load_envs
+    echo -e "${GREEN}[EXEC] Up: docker compose up -d $1${NC}"
+    docker compose -f "$COMPOSE_FILE" up -d $1
+}
+
+restart_docker() {
+    load_envs
+    echo -e "${GREEN}[EXEC] Restart: docker compose restart $1${NC}"
+    docker compose -f "$COMPOSE_FILE" restart $1
+}
+
+rebuild_docker() {
+    load_envs
+    echo -e "${GREEN}[EXEC] Rebuild & Up: docker compose up -d --build $1${NC}"
+    docker compose -f "$COMPOSE_FILE" up -d --build $1
+}
+
+recreate_docker() {
+    load_envs
+    echo -e "${GREEN}[EXEC] Force Recreate: docker compose up -d --force-recreate $1${NC}"
+    docker compose -f "$COMPOSE_FILE" up -d --force-recreate $1
+}
+
+# --- LOGIC BARU: RELOAD (ZERO DOWNTIME - FIXED) ---
+reload_docker() {
+    load_envs
+    local selected_services="$1"
+    
+    if [[ -z "$selected_services" ]]; then
+        selected_services="${SERVICES[*]}"
     fi
 
-    "$action_fn" "$CMD_SERVICES"
-}
+    echo -e "${CYAN}=== MULAI RELOAD CONFIGURATION (Zero Downtime) ===${NC}"
 
-# --- Fungsi Eksekusi Docker ---
+    for svc in $selected_services; do
+        echo -e "${YELLOW}>> Reloading service: $svc ...${NC}"
+        
+        # Cek apakah container berjalan
+        if ! docker compose -f "$COMPOSE_FILE" ps --services --filter "status=running" | grep -q "^$svc$"; then
+            echo -e "${RED}   [SKIP] Service '$svc' tidak berjalan (Down).${NC}"
+            continue
+        fi
 
-# 1. Standard Up
-run_docker() {
-    TARGETS=$1
-    load_envs
-    echo -e "${GREEN}[EXEC] Menjalankan: docker compose up -d $TARGETS${NC}"
-    docker compose up -d $TARGETS
-    echo -e "${YELLOW}------------------------------------------------${NC}"
-    echo -e "${GREEN}✅ Selesai! Cek status dengan: docker compose ps${NC}"
-}
+        case $svc in
+            "load_balancer"|"nginx")
+                # Nginx biasanya punya binary 'nginx' di dalamnya, jadi aman pakai exec
+                docker compose -f "$COMPOSE_FILE" exec "$svc" nginx -s reload
+                echo -e "${GREEN}   [OK] Nginx reloaded.${NC}"
+                ;;
+            
+            "app"|"worker"|"scheduler")
+                # FIX: Menggunakan 'docker compose kill' (Signal Injection)
+                # Ini TIDAK butuh binary 'kill' di dalam container.
+                docker compose -f "$COMPOSE_FILE" kill -s USR2 "$svc"
+                echo -e "${GREEN}   [OK] PHP-Service reloaded (Signal USR2 Sent).${NC}"
+                ;;
+            
+            "reverb")
+                 # Reverb benefits from a full restart to ensure clean state or use signal if supported
+                 # Assuming restart is safer for WebSocket server to reload config/code
+                 echo -e "${GREEN}   [EXEC] Restarting Reverb...${NC}"
+                 docker compose -f "$COMPOSE_FILE" restart "$svc"
+                 ;;
 
-# 2. Build & Force Recreate (NEW)
-rebuild_docker() {
-    TARGETS=$1
-    load_envs
-    echo -e "${GREEN}[EXEC] Rebuild & Recreate: docker compose up -d --build --force-recreate $TARGETS${NC}"
-    docker compose up -d --build --force-recreate $TARGETS
-    echo -e "${YELLOW}------------------------------------------------${NC}"
-    echo -e "${GREEN}✅ Rebuild selesai! Cek status dengan: docker compose ps${NC}"
-}
-
-# 3. Restart
-restart_docker() {
-    TARGETS=$1
-    load_envs
-    echo -e "${GREEN}[EXEC] Menjalankan: docker compose restart $TARGETS${NC}"
-    docker compose restart $TARGETS
-    echo -e "${YELLOW}------------------------------------------------${NC}"
-    echo -e "${GREEN}✅ Restart selesai! Cek status dengan: docker compose ps${NC}"
+            "mariadb"|"redis"|"minio")
+                echo -e "${RED}   [WARN] Database/Store tidak support hot-reload.${NC}"
+                echo -e "   Gunakan menu Restart jika config berubah."
+                ;;
+            
+            *)
+                # Default fallback: kirim sinyal SIGHUP dari luar
+                echo -e "${BLUE}   [INFO] Mengirim sinyal SIGHUP ke $svc...${NC}"
+                docker compose -f "$COMPOSE_FILE" kill -s SIGHUP "$svc"
+                ;;
+        esac
+    done
+    echo -e "${CYAN}=== RELOAD SELESAI ===${NC}"
 }
 
 # --- Main Menu ---
 while true; do
-    clear
     echo -e "${BLUE}========================================${NC}"
-    echo -e "${BLUE}   APP BOILERPLATE - DOCKER MANAGER   ${NC}"
+    echo -e "${BLUE}   CITRA KULINER - DOCKER MANAGER   ${NC}"
+    echo -e "${BLUE}   STACK : $STACK_NAME              ${NC}"
+    echo -e "${BLUE}   FILE  : $COMPOSE_FILE            ${NC}"
     echo -e "${BLUE}========================================${NC}"
-    echo "1. Jalankan SEMUA Service (Full Stack)"
-    echo "2. Pilih Service Manual (Up -d Biasa)"
-    echo -e "${YELLOW}3. Pilih Service Manual (Build & Force Recreate)${NC}" 
-    echo "4. Pilih Service Manual (Restart)"
-    echo "5. Restart SEMUA Service"
-    echo "6. Matikan Semua (Down)"
-    echo "7. Keluar"
+    echo "1. Jalankan SEMUA Service (Normal Up)"
+    echo "2. Pilih Service Manual (Normal Up)"
+    echo "3. Rebuild & Up SEMUA (Force Build)"
+    echo "4. Rebuild & Up Manual (Force Build)"
+    echo "5. Force Recreate Container SEMUA (Tanpa Rebuild Image)"
+    echo "6. Force Recreate Container Manual (Tanpa Rebuild Image)"
+    echo "----------------------------------------"
+    echo "7. Restart Service Manual (Downtime)"
+    echo "8. Restart SEMUA Service (Downtime)"
+    echo -e "${CYAN}9. Reload Service Manual (Zero Downtime)${NC}"
+    echo -e "${CYAN}10. Reload SEMUA Service (Zero Downtime)${NC}"
+    echo "----------------------------------------"
+    echo "11. Matikan Semua (Down)"
+    echo "12. Kelola Volume (Buat Ulang/Recreate)"
+    echo "13. Keluar"
     echo -e "----------------------------------------"
-    read -p "Pilih menu [1-7]: " menu
+    read -p "Pilih menu [1-13]: " menu
 
     case $menu in
-        1)
-            run_docker ""
-            read -p "Tekan enter..."
-            ;;
-        2)
-            service_selector "Start (Up)" run_docker
-            read -p "Tekan enter..."
-            ;;
-        3)
-            # Ini fitur barunya
-            service_selector "Build & Recreate" rebuild_docker
-            read -p "Tekan enter..."
-            ;;
-        4)
-            service_selector "Restart" restart_docker
-            read -p "Tekan enter..."
-            ;;
-        5)
-            restart_docker ""
-            read -p "Tekan enter..."
-            ;;
-        6)
-            echo -e "${RED}[STOP] Mematikan semua container...${NC}"
-            docker compose down
-            read -p "Tekan enter..."
-            ;;
-        7)
-            echo "Bye!"
-            exit 0
-            ;;
-        *)
-            echo "Pilihan tidak valid."
-            sleep 1
-            ;;
+        1) run_docker ""; read -p "Press Enter...";;
+        2) service_selector "Up" run_docker ;;
+        3) rebuild_docker ""; read -p "Press Enter...";;
+        4) service_selector "Rebuild" rebuild_docker ;;
+        5) recreate_docker ""; read -p "Press Enter...";;
+        6) service_selector "Recreate" recreate_docker ;;
+        7) service_selector "Restart" restart_docker ;;
+        8) restart_docker "" ; read -p "Press Enter...";;
+        9) service_selector "Reload (Zero Downtime)" reload_docker; read -p "Press Enter..." ;;
+        10) reload_docker ""; read -p "Press Enter..." ;;
+        11) docker compose -f "$COMPOSE_FILE" down; read -p "Press Enter..." ;;
+        12) manage_volumes ;;
+        13) echo "Bye!"; exit 0 ;;
+        *) echo "Pilihan tidak valid."; sleep 1 ;;
     esac
 done

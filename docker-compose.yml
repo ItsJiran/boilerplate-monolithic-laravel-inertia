@@ -143,7 +143,7 @@ services:
   # ---- BACKEND SERVICE
   server:
     build:
-      context: ./server
+      context: ./app
       dockerfile: ./Dockerfile.dev
     deploy:
       resources:
@@ -151,13 +151,15 @@ services:
           cpus: '${SERVER_CPU_LIMIT:-0}'
           memory: '${SERVER_MEM_LIMIT:-0b}'
     expose:
-      - "${SERVER_PORT}"
+      - "${APP_PORT}"
     env_file:
       - ./.env
       - ./.env.backend
       - ./.env.devops
     networks:
       - app_network
+    volumes:
+      - ./app:/var/www/html:z
     restart: unless-stopped
     working_dir: /var/www/html
     logging:
@@ -168,7 +170,7 @@ services:
 
   server-worker:
     build:
-      context: ./server
+      context: ./app
       dockerfile: ./Dockerfile.dev
     command: php artisan queue:work
     deploy:
@@ -177,13 +179,15 @@ services:
           cpus: '${SERVER_CPU_LIMIT:-0}'
           memory: '${SERVER_MEM_LIMIT:-0b}'
     expose:
-      - "${SERVER_PORT}"
+      - "${APP_PORT}"
     env_file:
       - ./.env
       - ./.env.backend
       - ./.env.devops
     networks:
       - app_network
+    volumes:
+      - ./app:/var/www/html:z
     restart: unless-stopped
     working_dir: /var/www/html
     logging:
@@ -194,7 +198,7 @@ services:
 
   server-socket:
     build:
-      context: ./server
+      context: ./app
       dockerfile: ./Dockerfile.dev
     command: php artisan reverb:start
     deploy:
@@ -203,13 +207,15 @@ services:
           cpus: '${SERVER_CPU_LIMIT:-0}'
           memory: '${SERVER_MEM_LIMIT:-0b}'
     expose:
-      - "${SERVER_PORT}"
+      - "${APP_PORT}"
     env_file:
       - ./.env
       - ./.env.backend
       - ./.env.devops
     networks:
       - app_network
+    volumes:
+      - ./app:/var/www/html:z
     restart: unless-stopped
     working_dir: /var/www/html
     logging:
@@ -220,7 +226,7 @@ services:
 
   server-cron:
     build:
-      context: ./server
+      context: ./app
       dockerfile: ./Dockerfile.dev
     command: php artisan schedule:work
     deploy:
@@ -234,6 +240,8 @@ services:
       - ./.env.devops 
     networks:
       - app_network
+    volumes:
+      - ./app:/var/www/html:z
     # restart: unless-stopped # Cron jangan restart policy strict jika exit code 0 (though schedule:work runs forever)
     restart: unless-stopped
     working_dir: /var/www/html
@@ -243,35 +251,7 @@ services:
         max-size: "5m"    # Maksimal 5 Megabyte per file
         max-file: "2"     # Maksimal 2 file (total 10MB)
   
-  # ---- FRONTEND SERVICE
-  client:
-    user: root 
-    build:
-      context: ./clients
-      dockerfile: ./Dockerfile.web.dev
-    deploy:
-      resources:
-        limits:
-          cpus: '${CLIENT_CPU_LIMIT:-0}'
-          memory: '${CLIENT_MEM_LIMIT:-0b}'
-    env_file:
-      - ./.env
-    volumes:
-      # PENTING: Untuk Production, hapus baris "." di bawah ini.
-      # Gunakan Bind Mount hanya saat development agar code terupdate.
-      - ./clients:/app:z
-    expose:
-      - "${CLIENT_PORT}"
-    networks:
-      - app_network
-    extra_hosts:
-      - "${APP_URL}:host-gateway"
-      - "${API_URL}:${API_EXTRA_HOST}"
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "5m"    # Maksimal 5 Megabyte per file
-        max-file: "2"     # Maksimal 2 file (total 10MB)
+
   
   # nginx untuk run server backend
   load_balancer: 

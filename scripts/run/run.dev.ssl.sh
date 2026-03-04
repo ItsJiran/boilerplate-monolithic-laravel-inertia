@@ -119,7 +119,7 @@ update_env_var "NODE_EXTRA_CA_CERTS" "$ROOT_CA_FILE"
 
 echo ""
 echo "🔐 7. Menyalin file sertifikat ke direktori build kontainer (app-server & app-clients)..."
-for BUILD_CTX_DIR in "$ROOT_DIR/app-server" "$ROOT_DIR/app-clients"; do
+for BUILD_CTX_DIR in "$ROOT_DIR/app"; do
   if [[ -d "$BUILD_CTX_DIR" ]]; then
     cp "$ROOT_CA_FILE" "$BUILD_CTX_DIR/step-ca-public-root.pem"
     cp "$CERT_LOCAL" "$BUILD_CTX_DIR/gen-${SAFE_APP_NAME}.crt"

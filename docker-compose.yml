@@ -268,7 +268,7 @@ services:
     ports:
       - "${LOAD_BALANCER_PORT}:80"
     volumes:
-      - ./.docker/nginx/default.conf.template:/etc/nginx/templates/default.conf.template:ro,Z
+      - ./infra/nginx/default.conf.lb.template:/etc/nginx/templates/default.conf.template:ro,Z
       - /etc/letsencrypt:/etc/letsencrypt
     networks:
       - app_network

@@ -31,7 +31,7 @@ SAFE_APP_NAME="${SAFE_APP_NAME// /-}"
 SAFE_APP_NAME="${SAFE_APP_NAME,,}"
 
 CSR_LOCAL="$ROOT_DIR/gen-${SAFE_APP_NAME}.csr"
-KEY_LOCAL="$ROOT_DIR/gen-${SAFE_APP_NAME}-key.pem"
+KEY_LOCAL="$ROOT_DIR/gen-${SAFE_APP_NAME}.key"
 CERT_LOCAL="$ROOT_DIR/gen-${SAFE_APP_NAME}.crt"
 ROOT_CA_FILE="$ROOT_DIR/step-ca-public-root.pem"
 
@@ -76,6 +76,7 @@ for VAR in API_URL REVERB_URL S3_URL S3_CONSOLE_URL; do
     SANS+=("--san" "$VAL")
   fi
 done
+SANS+=("--san" "$APP_URL")
 SANS+=("--san" "*.$APP_URL")
 SANS+=("--san" "localhost")
 SANS+=("--san" "127.0.0.1")
@@ -93,7 +94,7 @@ echo "$STEP_CA_PASSWORD" | step-cli ca sign "$CSR_LOCAL" "$CERT_LOCAL" \
 # --- Mengkonfigurasi Nginx SSL ---
 SSL_DIR="/etc/nginx/ssl"
 CERT_FILE="$SSL_DIR/${SAFE_APP_NAME}.pem"
-KEY_FILE="$SSL_DIR/${SAFE_APP_NAME}-key.pem"
+KEY_FILE="$SSL_DIR/${SAFE_APP_NAME}.key"
 
 echo ""
 echo "🔐 4. Mengkonfigurasi Nginx SSL (Membutuhkan akses Sudo)..."

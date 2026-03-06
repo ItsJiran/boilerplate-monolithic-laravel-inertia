@@ -210,6 +210,15 @@ Gunakan `infra/monitoring/prometheus.example.yml` sebagai referensi endpoint exp
 # Pilih: run.app.sh
 ```
 
+**Penting untuk Development (Vite/Node):**
+Jika Anda menjalankan `npm install` atau `npm run dev` langsung di Host atau dalam container dan mendapat *permission error*, pastikan ownership/permissions folder sudah sesuai dengan user web server (`www-data`):
+```bash
+sudo chown -R www-data:www-data app/
+sudo chmod -R 775 app/
+# atau jika di komputer lokal Linux, Anda bisa menambahkan user Anda ke grup www-data:
+# sudo usermod -aG www-data $USER
+```
+
 Script interaktif dengan **checkbox selector** — pilih service yang ingin dioperasikan. Operasi yang tersedia:
 
 | Operasi | Keterangan |

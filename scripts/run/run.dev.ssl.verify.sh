@@ -28,7 +28,7 @@ SAFE_APP_NAME="${SAFE_APP_NAME// /-}"
 SAFE_APP_NAME="${SAFE_APP_NAME,,}"
 
 CERT_LOCAL="$ROOT_DIR/gen-${SAFE_APP_NAME}.crt"
-KEY_LOCAL="$ROOT_DIR/gen-${SAFE_APP_NAME}-key.pem"
+KEY_LOCAL="$ROOT_DIR/gen-${SAFE_APP_NAME}.key"
 ROOT_CA_FILE="$ROOT_DIR/step-ca-public-root.pem"
 
 echo "=========================================================="

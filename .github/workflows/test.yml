@@ -68,6 +68,53 @@ jobs:
           sudo ./setup.sh setup-nginx-host.sh
 
       # -------------------------------------------------------------
+      # 1.5. Install Dependencies (With Caching)
+      # -------------------------------------------------------------
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: mbstring, dom, fileinfo, mysql
+          coverage: none
+
+      - name: Get Composer Cache Directory
+        id: composer-cache
+        run: echo "dir=$(composer config cache-files-dir)" >> $GITHUB_OUTPUT
+        working-directory: ./app
+
+      - name: Cache Composer Dependencies
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: ${{ runner.os }}-composer-${{ hashFiles('**/composer.lock') }}
+          restore-keys: ${{ runner.os }}-composer-
+
+      - name: Install Composer Dependencies
+        run: composer install --no-ansi --no-interaction --no-scripts --no-progress --prefer-dist
+        working-directory: ./app
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: app/package-lock.json
+
+      - name: Install NPM & Build Assets
+        run: |
+          npm ci
+          npm run build
+        working-directory: ./app
+
+      - name: Fix Permissions for Docker
+        run: |
+          # Ensure permissions are open for the Docker container user (www-data)
+          # 'No such file' for autoload.php often means directory execute permission is missing for the container user
+          sudo chmod -R 777 app/vendor
+          sudo chmod -R 777 app/storage
+          sudo chmod -R 777 app/bootstrap/cache
+
+      # -------------------------------------------------------------
       # 2. Start Infrastructure (Docker Compose)
       # -------------------------------------------------------------
       - name: Start Services (Step CA & Nginx Host)

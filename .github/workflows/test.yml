@@ -180,4 +180,4 @@ jobs:
             exit 1
           fi
 
-          ./run.sh test.sh
+          ./test.sh

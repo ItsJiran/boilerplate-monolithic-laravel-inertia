@@ -89,7 +89,20 @@ jobs:
           # Create network if not exists
           docker network inspect "$APP_NETWORK" >/dev/null 2>&1 || docker network create "$APP_NETWORK"
 
-          # 3. Start Step CA
+          # 3. Install Step CLI (Required for SSL script)
+          wget https://dl.step.sm/gh-release/cli/docs-cli-install/v0.24.4/step-cli_0.24.4_amd64.deb
+          sudo dpkg -i step-cli_0.24.4_amd64.deb
+          # Ensure 'step-cli' command exists (sometimes it installs as 'step')
+          if ! command -v step-cli &> /dev/null; then
+            if command -v step &> /dev/null; then
+              sudo ln -s $(which step) /usr/bin/step-cli
+            else
+              echo "Error: step-cli installation failed"
+              exit 1
+            fi
+          fi
+
+          # 4. Start Step CA
           # Explicitly pass environment from shell or file
           docker compose --env-file .env -f infra/docker-compose.step-ca.yml up -d
 

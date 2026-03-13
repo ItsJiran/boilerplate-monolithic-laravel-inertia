@@ -57,6 +57,10 @@ jobs:
           sed -i "s|^REDIS_HOST=.*|REDIS_HOST=redis|" .env.backend
           sed -i "s|^REDIS_PASSWORD=.*|REDIS_PASSWORD=redispassword|" .env.backend
           
+          # Increase Memory Limits for CI (Avoid OOM Kill 137)
+          sed -i "s|^SERVER_MEM_LIMIT=.*|SERVER_MEM_LIMIT=1G|" .env.devops
+          sed -i "s|^MARIADB_MEM_LIMIT=.*|MARIADB_MEM_LIMIT=512M|" .env.devops
+
           # Append Docker Tag (Required for Compose)
           if ! grep -q "DOCKER_IMAGE_TAG=" .env; then
             echo "DOCKER_IMAGE_TAG=ci-build" >> .env

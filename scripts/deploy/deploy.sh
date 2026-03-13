@@ -53,6 +53,8 @@ if [ -f ".env" ]; then
     if grep -q "^DOCKER_IMAGE_TAG=" .env; then
          sed -i "s|^DOCKER_IMAGE_TAG=.*|DOCKER_IMAGE_TAG=$VERSION_TAG|" .env
     else
+         # Ensure newline before appending
+         if [ -n "$(tail -c1 .env)" ]; then echo "" >> .env; fi
          echo "DOCKER_IMAGE_TAG=$VERSION_TAG" >> .env
     fi
 fi

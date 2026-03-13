@@ -116,6 +116,7 @@ jobs:
           sudo chmod -R 777 app/vendor
           sudo chmod -R 777 app/storage
           sudo chmod -R 777 app/bootstrap/cache
+          sudo chmod -R 777 app/public
 
       # -------------------------------------------------------------
       # 2. Start Infrastructure (Docker Compose)

@@ -20,10 +20,9 @@ name: "🛠️ [Micro Deploy 6/6] Run Script"
 #   runner=run.sh,   script=run.prod.ssl.sh,    args=--domain=myapp.com --email=x
 #   runner=setup.sh, script=setup-monitoring.sh, args=
 #   runner=setup.sh, script=setup-nginx-host.sh, args=--app-domain=myapp.com --dry-run
-#   runner=setup-nginx.sh, script=, args=--single --service=app --domain=myapp.com
-#   runner=setup-nginx.sh, script=, args=--single --service=reverb --domain=reverb.myapp.com
-#   runner=setup-nginx-host.sh, script=, args=--single --service=app --domain=myapp.com --ssl-mode=letsencrypt
-#   runner=setup-nginx-host.sh, script=, args=--single --service=s3 --domain=s3.myapp.com --ssl-mode=manual --ssl-cert=/path/s3.pem --ssl-key=/path/s3.key
+#   runner=setup.sh, script=setup-nginx-template.sh, args=--single --service=app --domain=myapp.com
+#   runner=setup.sh, script=setup-nginx-host-template.sh, args=--single --service=app --domain=myapp.com --ssl-mode=letsencrypt
+#   runner=setup.sh, script=setup-nginx-host.sh, args=--source=infra/nginx/default.conf.vps.template --file-name=myapp.conf
 #   runner=direct,   command=docker compose ps
 #   runner=direct,   command=sudo certbot renew --quiet
 # =========================================================

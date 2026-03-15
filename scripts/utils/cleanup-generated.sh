@@ -10,6 +10,8 @@ echo "🧹 Cleaning up generated configuration..."
 
 rm -f "$ROOT_DIR/.env" "$ROOT_DIR/.env.backend" "$ROOT_DIR/.env.devops"
 rm -f "$ROOT_DIR/infra/nginx/default.conf"
+rm -f "$ROOT_DIR/infra/nginx/default.conf.vps.template"
+rm -f "$ROOT_DIR/infra/nginx/default.conf.lb.template"
 
 # Remove SSL/certificate artifacts generated in project root only.
 find "$ROOT_DIR" -maxdepth 1 -type f \( \

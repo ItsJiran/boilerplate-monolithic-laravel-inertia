@@ -139,7 +139,9 @@ scripts/deploy/
 ├── steps/
 │   ├── 10-prepare-env.sh
 │   ├── 20-pull-image.sh
-│   ├── 30-setup-nginx.sh
+│   ├── 30-setup-nginx-template.sh
+│   ├── 35-setup-nginx-host-template.sh
+│   ├── 36-deploy-nginx-host-conf.sh
 │   ├── 40-migrate.sh
 │   ├── 50-up-services.sh
 │   └── 60-healthcheck.sh
@@ -212,50 +214,57 @@ sudo scripts/setup/setup-hosts.sh --only=app,api --exclude=api
 
 Supported targets: `app`, `api`, `s3`, `s3-console`, `grafana`, `pma`, `reverb`, `hmr`.
 
-### 3. Setup Nginx Virtual Host on Host Machine
+### 3. Setup Nginx (LB Template + VPS Host Template + Deploy)
 
 ```bash
 sudo ./setup.sh
-# Select: setup-nginx-host.sh
+# Select: setup-nginx-template.sh
 ```
 
-Creates Nginx configuration in `/etc/nginx/sites-available/` and symlinks it to `/etc/nginx/sites-enabled/` so local domains are routed to the load balancer port.
+Flow baru dibagi jadi 3 script agar modular dan bisa dijalankan 1-1 per domain/service:
 
-Argument-based selective generation (recommended):
+1) Generate LB template (dipakai container nginx di Docker):
 ```bash
-sudo scripts/setup/setup-nginx-host.sh \
-	--app-domain=myapp.com \
-	--reverb-domain=reverb.myapp.com \
-	--s3-domain=s3.myapp.com \
-	--pma-domain= \
-	--grafana-domain= \
-	--hmr-domain=
+./setup.sh setup-nginx-template.sh --single --service=app --domain=myapp.com
+./setup.sh setup-nginx-template.sh --single --service=reverb --domain=reverb.myapp.com
+./setup.sh setup-nginx-template.sh --single --service=s3 --domain=s3.myapp.com
 ```
 
-Development (Step CA shared cert for all selected domains):
+Output default: `infra/nginx/default.conf.lb.template`
+
+2) Generate host VPS template (untuk nginx host):
 ```bash
-sudo scripts/setup/setup-nginx-host.sh \
-	--app-domain=myapp.local \
-	--reverb-domain=reverb.myapp.local \
-	--s3-domain=s3.myapp.local \
-	--ssl-cert=/etc/nginx/ssl/myapp.pem \
-	--ssl-key=/etc/nginx/ssl/myapp.key
+./setup.sh setup-nginx-host-template.sh --single --service=app --domain=myapp.com --ssl-mode=letsencrypt
+./setup.sh setup-nginx-host-template.sh --single --service=reverb --domain=reverb.myapp.com --ssl-mode=letsencrypt
+./setup.sh setup-nginx-host-template.sh --single --service=s3 --domain=s3.myapp.com --ssl-mode=letsencrypt
 ```
 
-Production (Let's Encrypt cert per domain, auto-derived path):
+Output default: `infra/nginx/default.conf.vps.template`
+
+3) Deploy host template ke nginx VPS (`sites-available/*.conf`):
 ```bash
-sudo scripts/setup/setup-nginx-host.sh \
-	--app-domain=myapp.com \
-	--reverb-domain=reverb.myapp.com \
-	--s3-domain=s3.myapp.com
+sudo ./setup.sh setup-nginx-host.sh \
+  --source=infra/nginx/default.conf.vps.template \
+  --file-name=myapp.com.conf
+```
+
+Optional deploy args:
+```bash
+sudo ./setup.sh setup-nginx-host.sh \
+  --source=infra/nginx/default.conf.vps.template \
+  --file-name=myapp.com.conf \
+  --copy-to=/backup/nginx/myapp.com.conf \
+  --skip-reload
 ```
 
 Notes:
-- Script akan generate `infra/nginx/default.conf` dari `infra/nginx/default.conf.lb.template`.
-- Script juga generate config host-vps dari `infra/nginx/default.host.vps.template`.
-- Domain optional yang dikosongkan (`--hmr-domain=`, `--pma-domain=`) akan dihapus section server block-nya agar tidak bentrok.
-- `--ssl-cert` dan `--ssl-key` dipakai untuk shared cert (umumnya dev Step CA/SAN cert).
-- Tanpa `--ssl-cert`/`--ssl-key`, script otomatis pakai pola certbot: `/etc/letsencrypt/live/<domain>/fullchain.pem` dan `privkey.pem`.
+- Semua generation pakai pola **single 1-1**, jalankan berulang per service/domain.
+- LB template dipakai oleh docker nginx container (`default.conf.template`).
+- Host template hasil generate dideploy ke `/etc/nginx/sites-available/<name>.conf`.
+- SSL mode di `setup-nginx-host-template.sh`:
+  - `letsencrypt` -> `/etc/letsencrypt/live/<domain>/fullchain.pem`
+  - `stepca` -> `/etc/nginx/ssl/<domain>.pem` dan `.key`
+  - `manual` -> `--ssl-cert` + `--ssl-key`
 
 ### 4. Setup SSL Development
 

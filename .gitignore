@@ -24,4 +24,4 @@ node_modules
 
 # Generated nginx configs
 infra/nginx/default.conf.lb.template
-infra/nginx/default.host.vps.template
+infra/nginx/default.conf.vps.template

@@ -168,15 +168,61 @@ jobs:
           ./run.sh run.dev.ssl.sh
           ./run.sh run.dev.ssl.ca.sh
 
-          # 4. Setup Host Nginx (Requires Sudo)
-          chmod +x scripts/setup/setup-nginx-host.sh
+          # 4. Setup Nginx (LB + Host) with new template flow (single 1-1)
+          chmod +x setup-nginx.sh setup-nginx-host.sh scripts/setup/*.sh
+
           # run.dev.ssl.sh writes SSL_CERT_PATH/SSL_KEY_PATH into .env (shared SAN cert)
           SSL_CERT_PATH="$(grep '^SSL_CERT_PATH=' .env | cut -d '=' -f2-)"
           SSL_KEY_PATH="$(grep '^SSL_KEY_PATH=' .env | cut -d '=' -f2-)"
-          # The script checks for sudo internally, but in CI we run as user 'runner', so use sudo
+
+          # Ensure deterministic config in CI
+          sudo rm -f "/etc/nginx/sites-available/${APP_DOMAIN}.conf" "/etc/nginx/sites-enabled/${APP_DOMAIN}.conf"
+          rm -f infra/nginx/default.conf.lb.template
+          rm -f infra/nginx/default.conf.vps.template
+
+          append_lb() {
+            local svc="$1"
+            local dom="$2"
+            [ -z "$dom" ] && return 0
+            ./setup.sh setup-nginx-template.sh --single --service="$svc" --domain="$dom"
+          }
+
+          append_host_template() {
+            local svc="$1"
+            local dom="$2"
+            [ -z "$dom" ] && return 0
+            ./setup.sh setup-nginx-host-template.sh \
+              --single \
+              --service="$svc" \
+              --domain="$dom" \
+              --host-file-name="$APP_DOMAIN" \
+              --ssl-cert="$SSL_CERT_PATH" \
+              --ssl-key="$SSL_KEY_PATH"
+          }
+
+          # LB 1-1 entries
+          append_lb app "${APP_DOMAIN:-}"
+          append_lb app "${API_DOMAIN:-}"
+          append_lb s3 "${S3_DOMAIN:-${S3_URL:-}}"
+          append_lb s3-console "${S3_CONSOLE_DOMAIN:-${S3_CONSOLE_URL:-}}"
+          append_lb pma "${PMA_DOMAIN:-${PMA_ABSOLUTE_URI:-${PHPMYADMIN_URL:-}}}"
+          append_lb reverb "${REVERB_DOMAIN:-${REVERB_URL:-}}"
+          append_lb hmr "${HMR_URL:-}"
+
+          # Host VPS template 1-1 entries (shared StepCA cert for CI)
+          append_host_template app "${APP_DOMAIN:-}"
+          append_host_template app "${API_DOMAIN:-}"
+          append_host_template s3 "${S3_DOMAIN:-${S3_URL:-}}"
+          append_host_template s3-console "${S3_CONSOLE_DOMAIN:-${S3_CONSOLE_URL:-}}"
+          append_host_template pma "${PMA_DOMAIN:-${PMA_ABSOLUTE_URI:-${PHPMYADMIN_URL:-}}}"
+          append_host_template grafana "${GRAFANA_URL:-}"
+          append_host_template reverb "${REVERB_DOMAIN:-${REVERB_URL:-}}"
+          append_host_template hmr "${HMR_URL:-}"
+
+          # Deploy generated host template to sites-available/*.conf and reload
           sudo ./setup.sh setup-nginx-host.sh \
-            --ssl-cert="$SSL_CERT_PATH" \
-            --ssl-key="$SSL_KEY_PATH"
+            --source=infra/nginx/default.conf.vps.template \
+            --file-name="${APP_DOMAIN}.conf"
 
           # 5. Setup /etc/hosts (Ephemeral DNS)
           # We need to point APP_DOMAIN to 127.0.0.1

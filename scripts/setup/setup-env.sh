@@ -200,6 +200,11 @@ if [ -f "config.json" ]; then
         }
         // -------------------------------------
 
+        // Only sync real env keys (uppercase and underscore), skip metadata like __comment.
+        $isSyncableKey = static function ($key) {
+            return is_string($key) && preg_match("/^[A-Z][A-Z0-9_]*$/", $key) === 1;
+        };
+
         foreach ($envFiles as $envFile) {
             if (!file_exists($envFile)) {
                 continue;
@@ -211,6 +216,7 @@ if [ -f "config.json" ]; then
             $lines = explode("\n", $envContent);
             $newLines = [];
             $keysUpdated = [];
+            $existingKeys = [];
 
             // 1. Update existing keys in .env
             foreach ($lines as $line) {
@@ -225,6 +231,12 @@ if [ -f "config.json" ]; then
                 // Split by first "="
                 $parts = explode("=", $line, 2);
                 $key = trim($parts[0]);
+                $existingKeys[$key] = true;
+
+                if (!$isSyncableKey($key)) {
+                    $newLines[] = $line;
+                    continue;
+                }
                 
                 // Check if key exists in env config
                 if (array_key_exists($key, $envConfig)) {
@@ -246,9 +258,24 @@ if [ -f "config.json" ]; then
                 }
             }
 
+            // 2. Append missing keys from config.json
+            $keysAppended = 0;
+            foreach ($envConfig as $cfgKey => $cfgVal) {
+                if (!$isSyncableKey($cfgKey) || isset($existingKeys[$cfgKey])) {
+                    continue;
+                }
+
+                if (is_bool($cfgVal)) {
+                    $cfgVal = $cfgVal ? "true" : "false";
+                }
+
+                $newLines[] = "$cfgKey=$cfgVal";
+                $keysAppended++;
+            }
+
             // Write back to .env
             file_put_contents($envFile, implode("\n", $newLines));
-            echo "     -> Updated " . count($keysUpdated) . " keys.\n";
+            echo "     -> Updated " . count($keysUpdated) . " keys, appended " . $keysAppended . " keys.\n";
         }
     '
     echo -e "${GREEN}[OK]${NC}   Passed: All .env files synced with config.json"

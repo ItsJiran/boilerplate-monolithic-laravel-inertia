@@ -26,7 +26,7 @@ services:
     volumes:
       - app-mariadb-data:/var/lib/mysql
     networks:
-      - citra-matrix
+      - app_network
     healthcheck:
       test: ["CMD", "mariadb-admin", "ping", "-h", "mariadb", "-u", "root", "-p${DB_ROOT_PASSWORD:-root}"]
       interval: 10s
@@ -43,7 +43,7 @@ services:
   db-init:
     image: mariadb:latest
     networks:
-      - citra-matrix
+      - app_network
     depends_on:
       mariadb:
         condition: service_healthy
@@ -76,7 +76,7 @@ services:
     volumes:
       - app-redis-data:/data
     networks:
-      - citra-matrix
+      - app_network
     healthcheck:
       test: ["CMD", "redis-cli", "-p", "${REDIS_PORT}", "ping"]
       interval: 10s
@@ -106,7 +106,7 @@ services:
       - ./.env.backend
       - ./.env.devops
     networks:
-      - citra-matrix
+      - app_network
     # NO VOLUMES MOUNTED (Code is inside image)
 
     restart: always
@@ -129,7 +129,7 @@ services:
       - ./.env.backend
       - ./.env.devops
     networks:
-      - citra-matrix
+      - app_network
     # NO VOLUMES
     restart: always
     logging:
@@ -151,7 +151,7 @@ services:
       - ./.env.backend
       - ./.env.devops
     networks:
-      - citra-matrix
+      - app_network
     # NO VOLUMES
     restart: always
     logging:
@@ -169,7 +169,7 @@ services:
       - ./.env
       - ./.env.backend
     networks:
-      - citra-matrix
+      - app_network
     # NO VOLUMES
     restart: always
     logging:
@@ -195,7 +195,7 @@ services:
       # - ./certbot/conf:/etc/letsencrypt
       # - ./certbot/www:/var/www/certbot
     networks:
-      - citra-matrix
+      - app_network
     restart: always
 
 volumes:
@@ -207,5 +207,6 @@ volumes:
     name: ${REDIS_VOLUME_NAME}
 
 networks:
-  citra-matrix:
+  app_network:
+    name: ${APP_NETWORK:-app_boilerplate_network}
     driver: bridge

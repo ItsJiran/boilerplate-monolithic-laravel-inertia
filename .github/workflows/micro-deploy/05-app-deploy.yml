@@ -1,0 +1,149 @@
+name: "🚀 [Micro Deploy 5/6] App Deploy (Pull & Restart)"
+
+# =========================================================
+# Pulls the latest Docker image from GHCR and restarts
+# containers on the server using docker compose.
+#
+# Optionally runs post-deploy Laravel artisan commands.
+#
+# This should run AFTER "Setup Environment" (02).
+#
+# Required Secrets (SSH):
+#   DEPLOY_SSH_HOST, DEPLOY_SSH_USER, DEPLOY_SSH_KEY,
+#   DEPLOY_PATH, DEPLOY_SSH_PORT, DEPLOY_SSH_KNOWN_HOSTS
+#
+# Required Secrets (GHCR):
+#   GHCR_TOKEN  - GitHub PAT with `read:packages` scope
+#                 (needed for docker pull on server)
+# =========================================================
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        required: true
+        type: choice
+        options: [staging, production]
+        default: production
+      image_tag:
+        description: "Docker image tag to deploy (e.g. v1.2.0, latest)"
+        required: true
+        type: string
+      compose_file:
+        description: "Docker Compose file to use"
+        required: false
+        type: choice
+        options: ["docker-compose.yml", "docker-compose.prod.yml"]
+        default: "docker-compose.prod.yml"
+      run_migrate:
+        description: "Run php artisan migrate"
+        required: false
+        type: boolean
+        default: false
+      clear_cache:
+        description: "Run php artisan optimize:clear + re-cache"
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  app-deploy:
+    name: "Deploy ${{ inputs.image_tag }} → ${{ inputs.environment }}"
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+
+    env:
+      DEPLOY_HOST: ${{ secrets.DEPLOY_SSH_HOST }}
+      DEPLOY_USER: ${{ secrets.DEPLOY_SSH_USER }}
+      DEPLOY_PORT: ${{ secrets.DEPLOY_SSH_PORT || '22' }}
+      DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+
+    steps:
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          if [ -n "${{ secrets.DEPLOY_SSH_KNOWN_HOSTS }}" ]; then
+            printf '%s\n' "${{ secrets.DEPLOY_SSH_KNOWN_HOSTS }}" >> ~/.ssh/known_hosts
+          else
+            ssh-keyscan -p "$DEPLOY_PORT" -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
+          fi
+          chmod 644 ~/.ssh/known_hosts
+
+      - name: Update DOCKER_IMAGE_TAG on server
+        run: |
+          ssh -p "$DEPLOY_PORT" -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" bash -s <<REMOTE
+            set -euo pipefail
+            cd '$DEPLOY_PATH'
+            TAG='${{ inputs.image_tag }}'
+            for ENVFILE in .env .env.backend; do
+              [ -f "\$ENVFILE" ] || continue
+              if grep -q '^DOCKER_IMAGE_TAG=' "\$ENVFILE"; then
+                sed -i "s|^DOCKER_IMAGE_TAG=.*|DOCKER_IMAGE_TAG=\$TAG|" "\$ENVFILE"
+              else
+                echo "DOCKER_IMAGE_TAG=\$TAG" >> "\$ENVFILE"
+              fi
+            done
+            echo "✅ DOCKER_IMAGE_TAG=\$TAG written"
+          REMOTE
+
+      - name: Docker login on server (GHCR)
+        run: |
+          GHCR_USER="${{ github.repository_owner }}"
+          ssh -p "$DEPLOY_PORT" -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" \
+            "echo '${{ secrets.GHCR_TOKEN }}' | docker login ghcr.io -u '$GHCR_USER' --password-stdin"
+
+      - name: Pull Docker images
+        run: |
+          ssh -p "$DEPLOY_PORT" -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" bash -s <<REMOTE
+            set -euo pipefail
+            cd '$DEPLOY_PATH'
+            echo "📦 Pulling images with compose file: ${{ inputs.compose_file }} ..."
+            docker compose -f '${{ inputs.compose_file }}' pull
+          REMOTE
+
+      - name: Restart containers
+        run: |
+          ssh -p "$DEPLOY_PORT" -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" bash -s <<REMOTE
+            set -euo pipefail
+            cd '$DEPLOY_PATH'
+            echo "♻️  Restarting containers..."
+            docker compose -f '${{ inputs.compose_file }}' up -d --remove-orphans
+          REMOTE
+
+      - name: Run migrations (optional)
+        if: ${{ inputs.run_migrate == true }}
+        run: |
+          ssh -p "$DEPLOY_PORT" -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" bash -s <<REMOTE
+            set -euo pipefail
+            cd '$DEPLOY_PATH'
+            echo "🗄️  Running migrations..."
+            docker compose -f '${{ inputs.compose_file }}' exec -T app php artisan migrate --force
+          REMOTE
+
+      - name: Clear and re-cache config (optional)
+        if: ${{ inputs.clear_cache == true }}
+        run: |
+          ssh -p "$DEPLOY_PORT" -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" bash -s <<REMOTE
+            set -euo pipefail
+            cd '$DEPLOY_PATH'
+            echo "🔄 Clearing and re-caching..."
+            docker compose -f '${{ inputs.compose_file }}' exec -T app php artisan optimize:clear
+            docker compose -f '${{ inputs.compose_file }}' exec -T app php artisan config:cache
+            docker compose -f '${{ inputs.compose_file }}' exec -T app php artisan route:cache
+            docker compose -f '${{ inputs.compose_file }}' exec -T app php artisan view:cache
+          REMOTE
+
+      - name: Health check
+        run: |
+          ssh -p "$DEPLOY_PORT" -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" bash -s <<REMOTE
+            set -euo pipefail
+            cd '$DEPLOY_PATH'
+            echo "📋 Running containers:"
+            docker compose -f '${{ inputs.compose_file }}' ps --format 'table {{.Name}}\t{{.Status}}\t{{.Ports}}'
+          REMOTE

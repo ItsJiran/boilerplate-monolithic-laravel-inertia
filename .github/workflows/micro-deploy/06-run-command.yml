@@ -1,0 +1,145 @@
+name: "🛠️ [Micro Deploy 6/6] Run Script"
+
+# =========================================================
+# Generic script runner - runs ANY script on the server via SSH.
+# Useful for ad-hoc operations, diagnostics, and one-off tasks.
+#
+# Script selection:
+#   runner = run.sh   → scripts/run/<script>
+#   runner = setup.sh → scripts/setup/<script>
+#   runner = setup-nginx.sh      → root wrapper for LB setup
+#   runner = setup-nginx-host.sh → root wrapper for host setup
+#   runner = direct   → run raw `command` string directly
+#
+# Required Secrets (SSH):
+#   DEPLOY_SSH_HOST, DEPLOY_SSH_USER, DEPLOY_SSH_KEY,
+#   DEPLOY_PATH, DEPLOY_SSH_PORT, DEPLOY_SSH_KNOWN_HOSTS
+#
+# Examples:
+#   runner=run.sh,   script=run.app.sh,         args=restart
+#   runner=run.sh,   script=run.prod.ssl.sh,    args=--domain=myapp.com --email=x
+#   runner=setup.sh, script=setup-monitoring.sh, args=
+#   runner=setup.sh, script=setup-nginx-host.sh, args=--app-domain=myapp.com --dry-run
+#   runner=setup-nginx.sh, script=, args=--single --service=app --domain=myapp.com
+#   runner=setup-nginx.sh, script=, args=--single --service=reverb --domain=reverb.myapp.com
+#   runner=setup-nginx-host.sh, script=, args=--single --service=app --domain=myapp.com --ssl-mode=letsencrypt
+#   runner=setup-nginx-host.sh, script=, args=--single --service=s3 --domain=s3.myapp.com --ssl-mode=manual --ssl-cert=/path/s3.pem --ssl-key=/path/s3.key
+#   runner=direct,   command=docker compose ps
+#   runner=direct,   command=sudo certbot renew --quiet
+# =========================================================
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        required: true
+        type: choice
+        options: [staging, production]
+        default: production
+      runner:
+        description: "How to run the script"
+        required: true
+        type: choice
+        options: [run.sh, setup.sh, setup-nginx.sh, setup-nginx-host.sh, direct]
+        default: run.sh
+      script:
+        description: "Script name (e.g. run.app.sh) — used with run.sh / setup.sh"
+        required: false
+        type: string
+        default: ""
+      command:
+        description: "Raw command to run — used with runner=direct"
+        required: false
+        type: string
+        default: ""
+      args:
+        description: "Extra arguments appended to the script"
+        required: false
+        type: string
+        default: ""
+      use_sudo:
+        description: "Prefix command with sudo"
+        required: false
+        type: boolean
+        default: false
+      working_dir:
+        description: "Working directory on server (leave empty for DEPLOY_PATH)"
+        required: false
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  run-script:
+    name: "Run [${{ inputs.runner }}] ${{ inputs.script || inputs.command }} → ${{ inputs.environment }}"
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+
+    env:
+      DEPLOY_HOST: ${{ secrets.DEPLOY_SSH_HOST }}
+      DEPLOY_USER: ${{ secrets.DEPLOY_SSH_USER }}
+      DEPLOY_PORT: ${{ secrets.DEPLOY_SSH_PORT || '22' }}
+      DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+
+    steps:
+      - name: Validate inputs
+        run: |
+          RUNNER="${{ inputs.runner }}"
+          SCRIPT="${{ inputs.script }}"
+          CMD="${{ inputs.command }}"
+
+          if [[ "$RUNNER" != "direct" && "$RUNNER" != "setup-nginx.sh" && "$RUNNER" != "setup-nginx-host.sh" && -z "$SCRIPT" ]]; then
+            echo "❌ 'script' is required when runner is '$RUNNER'"
+            exit 1
+          fi
+          if [[ "$RUNNER" == "direct" && -z "$CMD" ]]; then
+            echo "❌ 'command' is required when runner is 'direct'"
+            exit 1
+          fi
+          echo "✅ Inputs valid"
+
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          if [ -n "${{ secrets.DEPLOY_SSH_KNOWN_HOSTS }}" ]; then
+            printf '%s\n' "${{ secrets.DEPLOY_SSH_KNOWN_HOSTS }}" >> ~/.ssh/known_hosts
+          else
+            ssh-keyscan -p "$DEPLOY_PORT" -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
+          fi
+          chmod 644 ~/.ssh/known_hosts
+
+      - name: Execute on server
+        run: |
+          RUNNER="${{ inputs.runner }}"
+          SCRIPT="${{ inputs.script }}"
+          RAW_CMD="${{ inputs.command }}"
+          ARGS="${{ inputs.args }}"
+          SUDO_PREFIX=""
+          WORKDIR="${{ inputs.working_dir }}"
+          WORKDIR="${WORKDIR:-$DEPLOY_PATH}"
+
+          [[ "${{ inputs.use_sudo }}" == "true" ]] && SUDO_PREFIX="sudo "
+
+          # Build the final command
+          case "$RUNNER" in
+            run.sh)   FINAL_CMD="${SUDO_PREFIX}./run.sh ${SCRIPT} ${ARGS}" ;;
+            setup.sh) FINAL_CMD="${SUDO_PREFIX}./setup.sh ${SCRIPT} ${ARGS}" ;;
+            setup-nginx.sh) FINAL_CMD="${SUDO_PREFIX}./setup-nginx.sh ${ARGS}" ;;
+            setup-nginx-host.sh) FINAL_CMD="${SUDO_PREFIX}./setup-nginx-host.sh ${ARGS}" ;;
+            direct)   FINAL_CMD="${SUDO_PREFIX}${RAW_CMD}" ;;
+          esac
+
+          echo "📋 Command: $FINAL_CMD"
+          echo "📂 Working dir: $WORKDIR"
+
+          ssh -p "$DEPLOY_PORT" -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" bash -s <<REMOTE
+            set -euo pipefail
+            cd '$WORKDIR'
+            echo "▶  $FINAL_CMD"
+            $FINAL_CMD
+          REMOTE

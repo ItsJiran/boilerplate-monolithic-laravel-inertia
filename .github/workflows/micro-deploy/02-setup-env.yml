@@ -1,0 +1,135 @@
+name: "⚙️ [Micro Deploy 2/6] Setup Environment"
+
+# =========================================================
+# Runs setup-env.sh on the server to generate .env files
+# from config.json, then injects secrets via --set args.
+#
+# This should run AFTER "Transfer Files" (01).
+#
+# Required Secrets (SSH):
+#   DEPLOY_SSH_HOST, DEPLOY_SSH_USER, DEPLOY_SSH_KEY,
+#   DEPLOY_PATH, DEPLOY_SSH_PORT, DEPLOY_SSH_KNOWN_HOSTS
+#
+# Required Secrets (App):
+#   APP_KEY              - Laravel app key
+#   DB_PASSWORD          - Database user password
+#   DB_ROOT_PASSWORD     - Database root password
+#   REDIS_PASSWORD       - Redis password
+#   MINIO_ROOT_PASSWORD  - MinIO root password (S3)
+#
+# Optional Secrets:
+#   CERTBOT_EMAIL        - Email for Let's Encrypt
+#   EXTRA_SET_ARGS       - Additional --set=KEY=VALUE (newline-separated)
+# =========================================================
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        required: true
+        type: choice
+        options: [staging, production]
+        default: production
+      config_env:
+        description: "Config profile to load from config.json"
+        required: true
+        type: choice
+        options: [local, staging, production]
+        default: production
+      docker_image_tag:
+        description: "Docker image tag to set (leave empty to skip)"
+        required: false
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  setup-env:
+    name: "Setup env (${{ inputs.config_env }}) → ${{ inputs.environment }}"
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+
+    env:
+      DEPLOY_HOST: ${{ secrets.DEPLOY_SSH_HOST }}
+      DEPLOY_USER: ${{ secrets.DEPLOY_SSH_USER }}
+      DEPLOY_PORT: ${{ secrets.DEPLOY_SSH_PORT || '22' }}
+      DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+      # App secrets passed through to server
+      SECRET_APP_KEY:             ${{ secrets.APP_KEY }}
+      SECRET_DB_PASSWORD:         ${{ secrets.DB_PASSWORD }}
+      SECRET_DB_ROOT_PASSWORD:    ${{ secrets.DB_ROOT_PASSWORD }}
+      SECRET_REDIS_PASSWORD:      ${{ secrets.REDIS_PASSWORD }}
+      SECRET_MINIO_ROOT_PASSWORD: ${{ secrets.MINIO_ROOT_PASSWORD }}
+      SECRET_CERTBOT_EMAIL:       ${{ secrets.CERTBOT_EMAIL }}
+
+    steps:
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          if [ -n "${{ secrets.DEPLOY_SSH_KNOWN_HOSTS }}" ]; then
+            printf '%s\n' "${{ secrets.DEPLOY_SSH_KNOWN_HOSTS }}" >> ~/.ssh/known_hosts
+          else
+            ssh-keyscan -p "$DEPLOY_PORT" -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
+          fi
+          chmod 644 ~/.ssh/known_hosts
+
+      - name: Write secrets inject file (secure transfer)
+        # Writing secrets to a file avoids them appearing in `ps aux` on server
+        run: |
+          {
+            [ -n "$SECRET_APP_KEY" ]             && printf 'APP_KEY=%s\n'             "$SECRET_APP_KEY"
+            [ -n "$SECRET_DB_PASSWORD" ]          && printf 'DB_PASSWORD=%s\n'         "$SECRET_DB_PASSWORD"
+            [ -n "$SECRET_DB_ROOT_PASSWORD" ]     && printf 'MARIADB_ROOT_PASSWORD=%s\n' "$SECRET_DB_ROOT_PASSWORD"
+            [ -n "$SECRET_REDIS_PASSWORD" ]       && printf 'REDIS_PASSWORD=%s\n'      "$SECRET_REDIS_PASSWORD"
+            [ -n "$SECRET_MINIO_ROOT_PASSWORD" ]  && printf 'MINIO_ROOT_PASSWORD=%s\n' "$SECRET_MINIO_ROOT_PASSWORD"
+            [ -n "$SECRET_CERTBOT_EMAIL" ]        && printf 'CERTBOT_EMAIL=%s\n'       "$SECRET_CERTBOT_EMAIL"
+            # Additional EXTRA_SET_ARGS passed as multiline KEY=VALUE
+            printf '%s\n' "${{ secrets.EXTRA_SET_ARGS }}"
+          } > /tmp/.inject_secrets
+          # Mask: count lines injected
+          LINES=$(grep -c '=' /tmp/.inject_secrets 2>/dev/null || echo 0)
+          echo "✅ Secrets file prepared with $LINES entries"
+
+      - name: Transfer secrets file to server
+        run: |
+          scp -P "$DEPLOY_PORT" -i ~/.ssh/deploy_key \
+            /tmp/.inject_secrets \
+            "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/.inject_secrets.tmp"
+          rm -f /tmp/.inject_secrets
+
+      - name: Run setup-env on server
+        run: |
+          IMAGE_TAG="${{ inputs.docker_image_tag }}"
+          ssh -p "$DEPLOY_PORT" -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" bash -s <<REMOTE
+            set -euo pipefail
+            cd '$DEPLOY_PATH'
+
+            # Build --set arguments from the secrets file
+            SET_ARGS=()
+            while IFS= read -r line; do
+              [[ -z "\$line" || "\$line" =~ ^# ]] && continue
+              SET_ARGS+=("--set=\$line")
+            done < .inject_secrets.tmp
+
+            echo "🔧 Running setup-env.sh --env=${{ inputs.config_env }} ..."
+            ./setup.sh setup-env.sh --env='${{ inputs.config_env }}' --force "\${SET_ARGS[@]}"
+
+            # Inject docker image tag if provided
+            if [ -n '$IMAGE_TAG' ]; then
+              if grep -q '^DOCKER_IMAGE_TAG=' .env; then
+                sed -i "s|^DOCKER_IMAGE_TAG=.*|DOCKER_IMAGE_TAG=$IMAGE_TAG|" .env
+              else
+                echo "DOCKER_IMAGE_TAG=$IMAGE_TAG" >> .env
+              fi
+              echo "✅ DOCKER_IMAGE_TAG set to $IMAGE_TAG"
+            fi
+
+            # Secure delete secrets file
+            shred -u .inject_secrets.tmp 2>/dev/null || rm -f .inject_secrets.tmp
+            echo "✅ setup-env complete"
+          REMOTE

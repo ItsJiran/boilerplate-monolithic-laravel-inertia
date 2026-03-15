@@ -1,0 +1,103 @@
+name: "🔐 [Micro Deploy 4/6] SSL Provision (Let's Encrypt)"
+
+# =========================================================
+# Requests SSL certificates from Let's Encrypt via Certbot.
+# Each domain gets its OWN certificate at:
+#   /etc/letsencrypt/live/<domain>/fullchain.pem
+#
+# Certbot runs in standalone mode (requires port 80 free).
+# The load_balancer container is stopped during cert issuance.
+#
+# Run this BEFORE or AFTER "Setup Nginx" (03) depending on
+# whether nginx config already references the cert paths.
+#
+# Required Secrets (SSH):
+#   DEPLOY_SSH_HOST, DEPLOY_SSH_USER, DEPLOY_SSH_KEY,
+#   DEPLOY_PATH, DEPLOY_SSH_PORT, DEPLOY_SSH_KNOWN_HOSTS
+#
+# Required Secrets (App):
+#   CERTBOT_EMAIL  - Email for Let's Encrypt account registration
+# =========================================================
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        required: true
+        type: choice
+        options: [staging, production]
+        default: production
+      domains:
+        description: "Domains to certify (comma-separated, e.g. myapp.com,api.myapp.com)"
+        required: false
+        type: string
+        default: ""
+      email:
+        description: "Email for Let's Encrypt (overrides CERTBOT_EMAIL secret)"
+        required: false
+        type: string
+        default: ""
+      staging_cert:
+        description: "Use Let's Encrypt STAGING (test run, not trusted)"
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  ssl-provision:
+    name: "SSL certify → ${{ inputs.environment }}"
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+
+    env:
+      DEPLOY_HOST: ${{ secrets.DEPLOY_SSH_HOST }}
+      DEPLOY_USER: ${{ secrets.DEPLOY_SSH_USER }}
+      DEPLOY_PORT: ${{ secrets.DEPLOY_SSH_PORT || '22' }}
+      DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+
+    steps:
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          if [ -n "${{ secrets.DEPLOY_SSH_KNOWN_HOSTS }}" ]; then
+            printf '%s\n' "${{ secrets.DEPLOY_SSH_KNOWN_HOSTS }}" >> ~/.ssh/known_hosts
+          else
+            ssh-keyscan -p "$DEPLOY_PORT" -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
+          fi
+          chmod 644 ~/.ssh/known_hosts
+
+      - name: Run run.prod.ssl.sh on server
+        run: |
+          # Resolve email: prefer workflow input, fall back to secret
+          EMAIL="${{ inputs.email }}"
+          if [ -z "$EMAIL" ]; then
+            EMAIL="${{ secrets.CERTBOT_EMAIL }}"
+          fi
+
+          # Build domains arg
+          DOMAINS_ARG=""
+          if [ -n "${{ inputs.domains }}" ]; then
+            DOMAINS_ARG="--domains=${{ inputs.domains }}"
+          fi
+
+          STAGING_ARG=""
+          [[ "${{ inputs.staging_cert }}" == "true" ]] && STAGING_ARG="--staging"
+
+          ssh -p "$DEPLOY_PORT" -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" bash -s <<REMOTE
+            set -euo pipefail
+            cd '$DEPLOY_PATH'
+            echo "🔐 Requesting SSL certificates..."
+            ./run.sh run.prod.ssl.sh $DOMAINS_ARG --email='$EMAIL' $STAGING_ARG
+          REMOTE
+
+      - name: Show cert summary
+        if: success()
+        run: |
+          ssh -p "$DEPLOY_PORT" -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" \
+            "sudo certbot certificates 2>/dev/null || echo '(certbot not in PATH, check /etc/letsencrypt/live/)'"

@@ -1,0 +1,179 @@
+name: "🔀 [Micro Deploy 3/6] Setup Nginx (Single 1-1)"
+
+# =========================================================
+# Single-entry workflow (1 execution = 1 service + 1 domain)
+#
+# Supports:
+# - LB config append via ./setup-nginx.sh --single
+# - Host VPS config append via ./setup-nginx-host.sh --single
+#
+# Run workflow multiple times for multiple domains/services.
+# =========================================================
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        required: true
+        type: choice
+        options: [staging, production]
+        default: production
+
+      target:
+        description: "Where to apply this single entry"
+        required: true
+        type: choice
+        options: [lb, host, both]
+        default: both
+
+      service:
+        description: "Service: app|hmr|s3|s3-console|pma|reverb|grafana(host-only)"
+        required: true
+        type: string
+
+      domain:
+        description: "Domain for this entry (host only)"
+        required: true
+        type: string
+
+      # Host-only options
+      host_file_name:
+        description: "Host filename under /etc/nginx/sites-available (optional)"
+        required: false
+        type: string
+        default: ""
+      ssl_mode:
+        description: "Host SSL mode"
+        required: false
+        type: choice
+        options: [letsencrypt, stepca, manual]
+        default: letsencrypt
+      ssl_cert:
+        description: "Host SSL cert path (manual mode required, others optional override)"
+        required: false
+        type: string
+        default: ""
+      ssl_key:
+        description: "Host SSL key path (manual mode required, others optional override)"
+        required: false
+        type: string
+        default: ""
+      host_output_path:
+        description: "Optional --output-host path"
+        required: false
+        type: string
+        default: ""
+      host_copy_to:
+        description: "Optional --copy-to path"
+        required: false
+        type: string
+        default: ""
+
+      # LB-only options
+      lb_output_path:
+        description: "Optional LB output file path (--output)"
+        required: false
+        type: string
+        default: ""
+
+      dry_run:
+        description: "Generate only, no apply/reload"
+        required: false
+        type: boolean
+        default: false
+      skip_reload:
+        description: "Skip nginx reload (host only)"
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  setup-nginx-single:
+    name: "Nginx single (${{ inputs.service }}:${{ inputs.domain }}) → ${{ inputs.environment }}"
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+
+    env:
+      DEPLOY_HOST: ${{ secrets.DEPLOY_SSH_HOST }}
+      DEPLOY_USER: ${{ secrets.DEPLOY_SSH_USER }}
+      DEPLOY_PORT: ${{ secrets.DEPLOY_SSH_PORT || '22' }}
+      DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+
+    steps:
+      - name: Validate input combinations
+        run: |
+          TARGET='${{ inputs.target }}'
+          SERVICE='${{ inputs.service }}'
+          SSL_MODE='${{ inputs.ssl_mode }}'
+          SSL_CERT='${{ inputs.ssl_cert }}'
+          SSL_KEY='${{ inputs.ssl_key }}'
+
+          if [[ "$TARGET" == "lb" && "$SERVICE" == "grafana" ]]; then
+            echo "❌ 'grafana' is host-only and cannot target 'lb'."
+            exit 1
+          fi
+
+          if [[ "$SSL_MODE" == "manual" ]]; then
+            [[ -z "$SSL_CERT" ]] && { echo "❌ ssl_cert required for ssl_mode=manual"; exit 1; }
+            [[ -z "$SSL_KEY"  ]] && { echo "❌ ssl_key required for ssl_mode=manual"; exit 1; }
+          fi
+
+          echo "✅ Inputs valid"
+
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          if [ -n "${{ secrets.DEPLOY_SSH_KNOWN_HOSTS }}" ]; then
+            printf '%s\n' "${{ secrets.DEPLOY_SSH_KNOWN_HOSTS }}" >> ~/.ssh/known_hosts
+          else
+            ssh-keyscan -p "$DEPLOY_PORT" -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
+          fi
+          chmod 644 ~/.ssh/known_hosts
+
+      - name: Run single-entry nginx setup
+        run: |
+          ssh -p "$DEPLOY_PORT" -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" bash -s <<'REMOTE'
+            set -euo pipefail
+            cd '${{ secrets.DEPLOY_PATH }}'
+
+            TARGET='${{ inputs.target }}'
+            SERVICE='${{ inputs.service }}'
+            DOMAIN='${{ inputs.domain }}'
+            DRY_RUN='${{ inputs.dry_run }}'
+            SKIP_RELOAD='${{ inputs.skip_reload }}'
+
+            lb_args=(--single "--service=$SERVICE" "--domain=$DOMAIN")
+            host_args=(--single "--service=$SERVICE" "--domain=$DOMAIN")
+
+            [ -n '${{ inputs.lb_output_path }}' ]   && lb_args+=("--output=${{ inputs.lb_output_path }}")
+            [ -n '${{ inputs.host_file_name }}' ]   && host_args+=("--host-file-name=${{ inputs.host_file_name }}")
+            [ -n '${{ inputs.host_output_path }}' ] && host_args+=("--output-host=${{ inputs.host_output_path }}")
+            [ -n '${{ inputs.host_copy_to }}' ]     && host_args+=("--copy-to=${{ inputs.host_copy_to }}")
+
+            if [ '${{ inputs.ssl_mode }}' = 'manual' ]; then
+              host_args+=("--ssl-cert=${{ inputs.ssl_cert }}" "--ssl-key=${{ inputs.ssl_key }}")
+            else
+              host_args+=("--ssl-mode=${{ inputs.ssl_mode }}")
+              [ -n '${{ inputs.ssl_cert }}' ] && host_args+=("--ssl-cert=${{ inputs.ssl_cert }}")
+              [ -n '${{ inputs.ssl_key }}' ]  && host_args+=("--ssl-key=${{ inputs.ssl_key }}")
+            fi
+
+            [ "$DRY_RUN" = "true" ] && lb_args+=("--dry-run") && host_args+=("--dry-run")
+            [ "$SKIP_RELOAD" = "true" ] && host_args+=("--skip-reload")
+
+            if [ "$TARGET" = "lb" ] || [ "$TARGET" = "both" ]; then
+              echo "🔧 Running LB 1-1: ./setup-nginx.sh ${lb_args[*]}"
+              ./setup-nginx.sh "${lb_args[@]}"
+            fi
+
+            if [ "$TARGET" = "host" ] || [ "$TARGET" = "both" ]; then
+              echo "🔧 Running Host 1-1: sudo ./setup-nginx-host.sh ${host_args[*]}"
+              sudo ./setup-nginx-host.sh "${host_args[@]}"
+            fi
+          REMOTE

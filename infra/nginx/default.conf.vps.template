@@ -1,0 +1,223 @@
+# =========================================================
+# 0. GLOBAL HTTP TO HTTPS REDIRECT
+# (Catches all Port 80 traffic and forces HTTPS)
+# =========================================================
+server {
+    listen 80;
+    server_name {{APP_DOMAIN}} {{PHPMYADMIN_URL}} {{S3_URL}} {{S3_CONSOLE_URL}} {{GRAFANA_URL}} {{HMR_URL}};
+
+    # Redirect all requests to HTTPS
+    return 301 https://$host$request_uri;
+}
+
+# =========================================================
+# 1. BACKEND SERVER (API) - HTTPS
+# =========================================================
+server {
+    listen 443 ssl http2;
+    server_name {{APP_DOMAIN}} *.{{APP_DOMAIN}};
+
+    # SSL Configuration
+    ssl_certificate     {{APP_SSL_CERT}};
+    ssl_certificate_key {{APP_SSL_KEY}};
+    
+    # SSL Best Practices
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers HIGH:!aNULL:!MD5;
+    
+    access_log /var/log/nginx/app-boilerplate_backend_access.log;
+    error_log  /var/log/nginx/app-boilerplate_backend_error.log warn;
+
+    location / {
+        proxy_pass http://127.0.0.1:{{LOAD_BALANCER_PORT}};
+
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https; # Force https scheme
+
+        # Timeouts
+        proxy_connect_timeout 60s;
+        proxy_send_timeout 300s;
+        proxy_read_timeout 300s;
+    }
+}
+
+# =========================================================
+# 3. PHPMYADMIN SERVER - HTTPS
+# =========================================================
+server {
+    listen 443 ssl http2;
+    server_name {{PHPMYADMIN_URL}} *.{{APP_DOMAIN}};
+
+    ssl_certificate     {{PMA_SSL_CERT}};
+    ssl_certificate_key {{PMA_SSL_KEY}};
+
+    access_log /var/log/nginx/app-boilerplate_phpmyadmin_access.log;
+    error_log  /var/log/nginx/app-boilerplate_phpmyadmin_error.log warn;
+
+    location / {
+        proxy_pass http://127.0.0.1:{{LOAD_BALANCER_PORT}};
+        
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+
+        # WebSocket
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+}
+
+# =========================================================
+# 4. MINIO SERVER (S3) - HTTPS
+# =========================================================
+server {
+    listen 443 ssl http2;
+    server_name {{S3_URL}} *.{{APP_DOMAIN}};
+
+    ssl_certificate     {{S3_SSL_CERT}};
+    ssl_certificate_key {{S3_SSL_KEY}};
+
+    # MinIO Specifics
+    client_max_body_size 0;
+    proxy_buffering off;
+    proxy_request_buffering off;
+
+    access_log /var/log/nginx/app-boilerplate_s3_access.log;
+    error_log  /var/log/nginx/app-boilerplate_s3_error.log warn;
+
+    location / {
+        proxy_pass http://127.0.0.1:{{LOAD_BALANCER_PORT}};
+        
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+
+        # WebSocket
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+}
+
+# =========================================================
+# 5. MINIO SERVER (S3 CONSOLE) - HTTPS
+# =========================================================
+server {
+    listen 443 ssl http2;
+    server_name {{S3_CONSOLE_URL}} *.{{APP_DOMAIN}};
+
+    ssl_certificate     {{S3_CONSOLE_SSL_CERT}};
+    ssl_certificate_key {{S3_CONSOLE_SSL_KEY}};
+
+    # MinIO Specifics
+    client_max_body_size 0;
+    proxy_buffering off;
+    proxy_request_buffering off;
+
+    access_log /var/log/nginx/app-boilerplate_s3_console_access.log;
+    error_log  /var/log/nginx/app-boilerplate_s3_console_error.log warn;
+
+    location / {
+        proxy_pass http://127.0.0.1:{{LOAD_BALANCER_PORT}};
+        
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+
+        # WebSocket
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+}
+
+# =========================================================
+# 6. GRAFANA SERVER - HTTPS
+# =========================================================
+server {
+    listen 443 ssl http2;
+    server_name {{GRAFANA_URL}} *.{{APP_DOMAIN}};
+
+    ssl_certificate     {{GRAFANA_SSL_CERT}};
+    ssl_certificate_key {{GRAFANA_SSL_KEY}};
+
+    access_log /var/log/nginx/app-boilerplate_grafana_access.log;
+    error_log  /var/log/nginx/app-boilerplate_grafana_error.log warn;
+
+    location / {
+        # Grafana uses a different internal port
+        proxy_pass http://127.0.0.1:{{GRAFANA_PORT}};
+        
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+
+        # WebSocket
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+}
+
+# =========================================================
+# 7. REVERB SERVER - HTTPS
+# =========================================================
+server {
+    listen 443 ssl http2;
+    server_name {{REVERB_URL}};
+
+    ssl_certificate     {{REVERB_SSL_CERT}};
+    ssl_certificate_key {{REVERB_SSL_KEY}};
+
+    access_log /var/log/nginx/app-boilerplate_reverb_access.log;
+    error_log  /var/log/nginx/app-boilerplate_reverb_error.log warn;
+
+    location / {
+        proxy_pass http://127.0.0.1:{{LOAD_BALANCER_PORT}};
+        
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+
+        # WebSocket
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+}
+
+# =========================================================
+# 8. HMR SERVER - HTTPS
+# =========================================================
+server {
+    listen 443 ssl http2;
+    server_name {{HMR_URL}};
+
+    ssl_certificate     {{HMR_SSL_CERT}};
+    ssl_certificate_key {{HMR_SSL_KEY}};
+
+    access_log /var/log/nginx/app-boilerplate_hmr_access.log;
+    error_log  /var/log/nginx/app-boilerplate_hmr_error.log warn;
+
+    location / {
+        proxy_pass http://127.0.0.1:{{LOAD_BALANCER_PORT}};
+        
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+
+        # WebSocket
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+}

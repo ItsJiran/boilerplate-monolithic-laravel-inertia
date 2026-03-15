@@ -1,14 +1,15 @@
 {
   "local": {
+    "DOCKER_IMAGE_NAME": "myapp:latest",
     "APP_ENV": "local",
     "APP_DEBUG": true,
     "APP_SCHEME": "https",
     "APP_DOMAIN": "myapp.test",
     "API_DOMAIN": "api.myapp.test",
-    "REVERB_DOMAIN": "reverbmatrix.myapp.test",
-    "S3_DOMAIN": "s3matrix.myapp.test",
-    "S3_CONSOLE_DOMAIN": "s3miniomatrix.myapp.test",
-    "PMA_DOMAIN": "phpmamatrix.myapp.test",
+    "REVERB_DOMAIN": "reverb.myapp.test",
+    "S3_DOMAIN": "s3.myapp.test",
+    "S3_CONSOLE_DOMAIN": "s3minio.myapp.test",
+    "PMA_DOMAIN": "phpmyadmin.myapp.test",
     "VITE_REVERB_SCHEME": "https",
     "VITE_REVERB_PORT": 443,
     "REDIS_CPU_LIMIT": 0,
@@ -48,7 +49,8 @@
     "SERVER_MAX_CHILDREN": 10,
     "MARIADB_VOLUME_NAME": "myapp-mariadb-data",
     "REDIS_VOLUME_NAME": "myapp-redis-data",
-    "MINIO_VOLUME_NAME": "myapp-minio-data"
+    "MINIO_VOLUME_NAME": "myapp-minio-data",
+    "APP_NETWORK": "myapp-network"
   },
   "staging": {
     "APP_ENV": "staging",
@@ -90,7 +92,8 @@
     "SERVER_MAX_CHILDREN": 20,
     "MARIADB_VOLUME_NAME": "myapp-staging-mariadb-data",
     "REDIS_VOLUME_NAME": "myapp-staging-redis-data",
-    "MINIO_VOLUME_NAME": "myapp-staging-minio-data"
+    "MINIO_VOLUME_NAME": "myapp-staging-minio-data",
+    "APP_NETWORK": "myapp-network"
   },
   "production": {
     "APP_ENV": "production",
@@ -126,6 +129,7 @@
     "MINIO_VOLUME_NAME": "myapp-prod-minio-data",
     "MARIADB_BUFFER_POOL": "3g",
     "REDIS_MAXMEMORY": "1500mb",
-    "SERVER_MAX_CHILDREN": 50
+    "SERVER_MAX_CHILDREN": 50,
+    "APP_NETWORK": "myapp-network"
   }
 }

@@ -128,6 +128,37 @@ This project uses a **Continuous Delivery (CD)** strategy with a strict **"No So
 
 See [DEPLOYMENT.md](DEPLOYMENT.md) for full details.
 
+### Modular Deployment Pattern (Micro Scripts)
+
+To keep CI/CD easy to read and customize, deployment should be composed from small scripts instead of one large script.
+
+Recommended structure:
+
+```bash
+scripts/deploy/
+├── steps/
+│   ├── 10-prepare-env.sh
+│   ├── 20-pull-image.sh
+│   ├── 30-setup-nginx.sh
+│   ├── 40-migrate.sh
+│   ├── 50-up-services.sh
+│   └── 60-healthcheck.sh
+└── deploy.pipeline.sh
+```
+
+Guidelines:
+- Each step script handles one concern and is idempotent.
+- `deploy.pipeline.sh` only orchestrates step order and selected modules.
+- CI workflow composes steps based on deployment target (full app, worker-only, socket-only, etc).
+- Service separation is done in workflow combinations, not by duplicating large deployment scripts.
+
+Example composition:
+
+```bash
+bash scripts/deploy/deploy.pipeline.sh --steps=prepare-env,pull-image,setup-nginx,up-services
+bash scripts/deploy/deploy.pipeline.sh --steps=prepare-env,pull-image,up-services --services=app-worker,app-socket
+```
+
 ### Exporters (`infra/docker-compose.devops.exporter.yml`)
 
 | Service | Function |
@@ -161,7 +192,7 @@ Run the following steps in sequence.
 ```
 
 This will copy `.env.example` → `.env`, `.env.backend`, `.env.devops`.
-Edit these files as needed (minimally: `APP_URL`, `DB_PASSWORD`, `APP_SLUG`).
+Edit these files as needed (minimally: `APP_DOMAIN`, `DB_PASSWORD`, `APP_SLUG`).
 
 ### 2. Setup Local Hosts
 
@@ -170,7 +201,16 @@ sudo ./setup.sh
 # Select: setup-hosts.sh
 ```
 
-Adds all domains from `.env` (`APP_URL`, `API_URL`, `S3_URL`, `S3_CONSOLE_URL`, `GRAFANA_URL`, `PHPMYADMIN_URL`) to `/etc/hosts` → `127.0.0.1`.
+Adds selected domains from `.env`/`.env.devops` to `/etc/hosts` → `127.0.0.1`.
+
+Examples:
+```bash
+sudo scripts/setup/setup-hosts.sh --only=app,api,reverb
+sudo scripts/setup/setup-hosts.sh --only=app,s3,s3-console,pma,grafana
+sudo scripts/setup/setup-hosts.sh --only=app,api --exclude=api
+```
+
+Supported targets: `app`, `api`, `s3`, `s3-console`, `grafana`, `pma`, `reverb`, `hmr`.
 
 ### 3. Setup Nginx Virtual Host on Host Machine
 
@@ -180,6 +220,22 @@ sudo ./setup.sh
 ```
 
 Creates Nginx configuration in `/etc/nginx/sites-available/` and symlinks it to `/etc/nginx/sites-enabled/` so local domains are routed to the load balancer port.
+
+Argument-based selective generation (recommended):
+```bash
+sudo scripts/setup/setup-nginx-host.sh \
+	--app-domain=myapp.com \
+	--reverb-domain=reverb.myapp.com \
+	--s3-domain=s3.myapp.com \
+	--pma-domain= \
+	--grafana-domain= \
+	--hmr-domain=
+```
+
+Notes:
+- Script akan generate `infra/nginx/default.conf` dari `infra/nginx/default.conf.lb.template`.
+- Script juga generate config host-vps dari `infra/nginx/default.host.vps.template`.
+- Domain optional yang dikosongkan (`--hmr-domain=`, `--pma-domain=`) akan dihapus section server block-nya agar tidak bentrok.
 
 ### 4. Setup SSL Development
 
@@ -203,6 +259,13 @@ Creates Nginx configuration in `/etc/nginx/sites-available/` and symlinks it to 
 ```
 
 > **Production**: Use Let's Encrypt. See `infra/LETSENCRYPT.md`.
+
+Example (argument-based SSL domains):
+```bash
+bash scripts/run/run.prod.ssl.sh --domains=myapp.com,api.myapp.com,reverb.myapp.com --email admin@myapp.com
+# or repeated manual domains:
+bash scripts/run/run.prod.ssl.sh --domain=myapp.com --domain=api.myapp.com --email admin@myapp.com
+```
 
 ### 5. Setup Monitoring Config
 

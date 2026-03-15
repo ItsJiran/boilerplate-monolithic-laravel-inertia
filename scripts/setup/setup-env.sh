@@ -12,6 +12,7 @@ echo "----------------------------------------"
 # --- Cek Flag Override & Environment ---
 OVERRIDE=0
 TARGET_ENV="local"
+SET_OVERRIDES=()
 
 for arg in "$@"; do
     case $arg in
@@ -21,6 +22,10 @@ for arg in "$@"; do
             ;;
         --env=*)
             TARGET_ENV="${arg#*=}"
+            shift
+            ;;
+        --set=*)
+            SET_OVERRIDES+=("${arg#*=}")
             shift
             ;;
     esac
@@ -45,15 +50,96 @@ copy_env() {
         cp "$SRC" "$DEST"
         echo -e "${GREEN}[OK]${NC}   Berhasil membuat $DEST (dari $SRC)"
     
-    # 2. Cek apakah file contoh (example) ada?
-    elif [ -f "$SRC" ]; then
-        cp "$SRC" "$DEST"
-        echo -e "${GREEN}[OK]${NC}   Berhasil membuat $DEST (dari $SRC)"
-    
     # 3. Error jika file contoh tidak ditemukan
     else
         echo -e "${RED}[ERROR]${NC} File sumber $SRC tidak ditemukan!"
     fi
+}
+
+upsert_env_key() {
+    FILE=$1
+    KEY=$2
+    VALUE=$3
+
+    ESCAPED_VALUE=$(printf '%s' "$VALUE" | sed 's/[&|]/\\&/g')
+
+    if grep -qE "^${KEY}=" "$FILE"; then
+        sed -i "s|^${KEY}=.*|${KEY}=${ESCAPED_VALUE}|g" "$FILE"
+    else
+        echo "${KEY}=${VALUE}" >> "$FILE"
+    fi
+}
+
+apply_argument_overrides() {
+    if [ ${#SET_OVERRIDES[@]} -eq 0 ]; then
+        return
+    fi
+
+    echo "🔧 Applying argument overrides..."
+
+    for envFile in .env .env.backend .env.devops; do
+        if [ ! -f "$envFile" ]; then
+            continue
+        fi
+
+        echo "   Processing $envFile..."
+        UPDATED=0
+
+        for pair in "${SET_OVERRIDES[@]}"; do
+            KEY="${pair%%=*}"
+            VALUE="${pair#*=}"
+
+            if [ -z "$KEY" ] || [ "$KEY" = "$pair" ]; then
+                echo -e "${YELLOW}[WARN]${NC} Invalid --set format: $pair (use --set=KEY=VALUE)"
+                continue
+            fi
+
+            upsert_env_key "$envFile" "$KEY" "$VALUE"
+            UPDATED=$((UPDATED + 1))
+        done
+
+        APP_SCHEME_VALUE=$(grep -E '^APP_SCHEME=' "$envFile" | head -n 1 | cut -d'=' -f2-)
+        if [ -z "$APP_SCHEME_VALUE" ]; then
+            APP_SCHEME_VALUE="https"
+        fi
+
+        DERIVATIONS=(
+            "APP_DOMAIN:APP_URL"
+            "API_DOMAIN:API_URL"
+            "REVERB_DOMAIN:REVERB_URL"
+            "S3_DOMAIN:S3_URL"
+            "S3_CONSOLE_DOMAIN:S3_CONSOLE_URL"
+            "PMA_DOMAIN:PMA_ABSOLUTE_URI"
+        )
+
+        for derivation in "${DERIVATIONS[@]}"; do
+            DOMAIN_KEY="${derivation%%:*}"
+            URL_KEY="${derivation##*:}"
+
+            DOMAIN_OVERRIDE=0
+            URL_OVERRIDE=0
+
+            for pair in "${SET_OVERRIDES[@]}"; do
+                OVERRIDE_KEY="${pair%%=*}"
+                if [ "$OVERRIDE_KEY" = "$DOMAIN_KEY" ] || [ "$OVERRIDE_KEY" = "APP_SCHEME" ]; then
+                    DOMAIN_OVERRIDE=1
+                fi
+                if [ "$OVERRIDE_KEY" = "$URL_KEY" ]; then
+                    URL_OVERRIDE=1
+                fi
+            done
+
+            if [ "$DOMAIN_OVERRIDE" -eq 1 ] && [ "$URL_OVERRIDE" -eq 0 ]; then
+                DOMAIN_VALUE=$(grep -E "^${DOMAIN_KEY}=" "$envFile" | head -n 1 | cut -d'=' -f2-)
+                DOMAIN_VALUE="${DOMAIN_VALUE#http://}"
+                DOMAIN_VALUE="${DOMAIN_VALUE#https://}"
+                DOMAIN_VALUE="${DOMAIN_VALUE%/}"
+                upsert_env_key "$envFile" "$URL_KEY" "${APP_SCHEME_VALUE}://${DOMAIN_VALUE}"
+            fi
+        done
+
+        echo "     -> Applied $UPDATED override(s)."
+    done
 }
 
 # --- EKSEKUSI ---
@@ -90,6 +176,29 @@ if [ -f "config.json" ]; then
             echo "No config found for environment: $targetEnv in config.json\n";
             exit(0);
         }
+
+        // --- Auto-Derive URLs from Domains ---
+        $appScheme = $envConfig["APP_SCHEME"] ?? "https";
+        
+        $domainMap = [
+            "APP_DOMAIN"        => "APP_URL",
+            "API_DOMAIN"        => "API_URL",
+            "REVERB_DOMAIN"     => "REVERB_URL",
+            "S3_DOMAIN"         => "S3_URL",
+            "S3_CONSOLE_DOMAIN" => "S3_CONSOLE_URL",
+            "PMA_DOMAIN"        => "PMA_ABSOLUTE_URI",
+        ];
+
+        foreach ($domainMap as $domainKey => $urlKey) {
+            if (isset($envConfig[$domainKey]) && !isset($envConfig[$urlKey])) {
+                $domain = $envConfig[$domainKey];
+                // Clean domain just in case
+                $domain = str_replace(["http://", "https://"], "", $domain);
+                $domain = trim($domain, "/");
+                $envConfig[$urlKey] = "{$appScheme}://{$domain}";
+            }
+        }
+        // -------------------------------------
 
         foreach ($envFiles as $envFile) {
             if (!file_exists($envFile)) {
@@ -146,6 +255,9 @@ if [ -f "config.json" ]; then
 else
     echo -e "${YELLOW}[SKIP]${NC} config.json not found."
 fi
+
+# --- 3. Optional override dari argument --set=KEY=VALUE ---
+apply_argument_overrides
 
 echo "----------------------------------------"
 echo -e "✅ Setup selesai!"

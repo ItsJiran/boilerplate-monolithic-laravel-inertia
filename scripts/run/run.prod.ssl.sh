@@ -6,8 +6,9 @@
 # Automates the retrieval of SSL certificates using Certbot
 # via Docker (Standalone Mode).
 #
-# Usage: 
-#   ./run.prod.ssl.sh --domain example.com --email admin@example.com
+# Usage:
+#   ./run.prod.ssl.sh --domain=myapp.com --domain=api.myapp.com --email admin@example.com
+#   ./run.prod.ssl.sh --domains=myapp.com,api.myapp.com,reverb.myapp.com --email admin@example.com
 # 
 # Note: This script temporarily stops the 'load_balancer' service
 # to allow Certbot to bind to port 80 for validation.
@@ -21,16 +22,68 @@ BLUE='\033[0;34m'
 NC='\033[0m'
 
 # --- Variables Defaults ---
-DOMAIN=""
+DOMAINS=()
 EMAIL=""
 STAGING_FLAG="" # Set to "--test-cert" for staging/testing
+
+usage() {
+        cat <<EOF
+Usage: $0 [options]
+
+Options:
+    --domain=VALUE       Domain/URL manual (boleh berulang)
+    --domains=LIST       Daftar domain (comma separated)
+    --email=VALUE        Email untuk registrasi Let's Encrypt
+    --staging            Gunakan Let's Encrypt staging
+    --help               Tampilkan bantuan
+
+Contoh:
+    $0 --domain=myapp.com --domain=api.myapp.com --email admin@myapp.com
+    $0 --domains=myapp.com,api.myapp.com,reverb.myapp.com --email admin@myapp.com
+EOF
+}
+
+extract_host() {
+        local value="$1"
+        local host="$value"
+
+        host="${host#http://}"
+        host="${host#https://}"
+        host="${host%%/*}"
+        host="${host%%:*}"
+        echo "$host"
+}
+
+add_domain_unique() {
+        local candidate
+        candidate="$(extract_host "$1")"
+        [ -z "$candidate" ] && return
+
+        local existing
+        for existing in "${DOMAINS[@]}"; do
+                [ "$existing" = "$candidate" ] && return
+        done
+        DOMAINS+=("$candidate")
+}
 
 # --- Argument Parsing ---
 while [[ "$#" -gt 0 ]]; do
     case $1 in
-        --domain|--url) DOMAIN="$2"; shift ;;
+        --domains=*)
+            IFS=',' read -r -a domain_list <<< "${1#*=}"
+            for item in "${domain_list[@]}"; do
+                add_domain_unique "$item"
+            done
+            ;;
+        --domain=*|--url=*) add_domain_unique "${1#*=}" ;;
+        --domain|--url) add_domain_unique "$2"; shift ;;
+        --email=*) EMAIL="${1#*=}" ;;
         --email) EMAIL="$2"; shift ;;
         --staging) STAGING_FLAG="--test-cert" ;;
+        --help)
+            usage
+            exit 0
+            ;;
         *) echo "Unknown parameter passed: $1"; exit 1 ;;
     esac
     shift
@@ -46,72 +99,95 @@ if [ -f "$ROOT_DIR/.env" ]; then
     set +a
 fi
 
-# Fallback to .env if arguments missing
-if [ -z "$DOMAIN" ]; then
-    DOMAIN="${APP_DOMAIN}"
+if [ -f "$ROOT_DIR/.env.devops" ]; then
+    set -a
+    source "$ROOT_DIR/.env.devops"
+    set +a
 fi
+
+# Default fallback: app domain only
+if [ ${#DOMAINS[@]} -eq 0 ]; then
+    add_domain_unique "${APP_DOMAIN}"
+fi
+
+PRIMARY_DOMAIN="${DOMAINS[0]}"
 if [ -z "$EMAIL" ]; then
-    EMAIL="${CERTBOT_EMAIL:-admin@${DOMAIN}}"
+    EMAIL="${CERTBOT_EMAIL:-admin@${PRIMARY_DOMAIN}}"
 fi
 
 # --- Validation ---
-if [ -z "$DOMAIN" ] || [ "$DOMAIN" == "myapp.test" ]; then
-    echo -e "${RED}[ERROR] Invalid Domain: '$DOMAIN'${NC}"
-    echo "Please provide a valid production domain via argument or .env"
-    echo "Usage: ./run.prod.ssl.sh --domain yourdomain.com --email admin@yourdomain.com"
+if [ ${#DOMAINS[@]} -eq 0 ]; then
+    echo -e "${RED}[ERROR] Domain list is empty.${NC}"
+    usage
     exit 1
 fi
 
+for DOMAIN in "${DOMAINS[@]}"; do
+    if [ -z "$DOMAIN" ] || [[ "$DOMAIN" == "localhost" ]] || [[ "$DOMAIN" == *.test ]]; then
+        echo -e "${RED}[ERROR] Invalid production domain: '$DOMAIN'${NC}"
+        echo "Gunakan domain publik, atau jalankan untuk env local dengan setup SSL dev script."
+        exit 1
+    fi
+done
+
 if [ -z "$EMAIL" ]; then
     echo -e "${RED}[ERROR] Email is required for Let's Encrypt registration.${NC}"
-    echo "Usage: ./run.prod.ssl.sh --domain yourdomain.com --email admin@yourdomain.com"
+    usage
     exit 1
 fi
 
 echo -e "${BLUE}=========================================================${NC}"
 echo -e "${BLUE}       SSL CERTIFICATE AUTO-PROVISIONING (CERTBOT)       ${NC}"
 echo -e "${BLUE}=========================================================${NC}"
-echo -e "Domain : ${YELLOW}$DOMAIN${NC}"
-echo -e "Email  : ${YELLOW}$EMAIL${NC}"
-echo -e "Mode   : ${YELLOW}Standalone (Docker)${NC}"
+echo -e "Domains : ${YELLOW}${DOMAINS[*]}${NC}"
+echo -e "Email   : ${YELLOW}$EMAIL${NC}"
+echo -e "Mode    : ${YELLOW}Standalone per-domain (Docker)${NC}"
+[ -n "$STAGING_FLAG" ] && echo -e "${YELLOW}(STAGING mode - certificates will NOT be trusted)${NC}"
 echo ""
 
 # --- 1. Stop Load Balancer (Port 80 Conflict) ---
 echo -e "${YELLOW}[1/3] Stopping Nginx Load Balancer to free Port 80...${NC}"
 docker compose stop load_balancer
 
-# --- 2. Run Certbot ---
-echo -e "${YELLOW}[2/3] Requesting Certificate from Let's Encrypt...${NC}"
-if [ -n "$STAGING_FLAG" ]; then
-    echo -e "${YELLOW}(Running in STAGING mode - Invalid Certificate)${NC}"
-fi
+# --- 2. Run Certbot per-domain ---
+# Each domain gets its own cert at /etc/letsencrypt/live/<domain>/
+# This makes nginx cert paths deterministic and independently renewable.
+echo -e "${YELLOW}[2/3] Requesting certificates from Let's Encrypt (one per domain)...${NC}"
 
-docker run --rm \
-  -v "/etc/letsencrypt:/etc/letsencrypt" \
-  -v "/var/lib/letsencrypt:/var/lib/letsencrypt" \
-  -p 80:80 \
-  certbot/certbot certonly --standalone \
-  -d "$DOMAIN" \
-  --email "$EMAIL" \
-  --agree-tos \
-  --no-eff-email \
-  --non-interactive \
-  $STAGING_FLAG
-
-EXIT_CODE=$?
+FAILED_DOMAINS=()
+for DOMAIN in "${DOMAINS[@]}"; do
+    echo -e "${BLUE}  → $DOMAIN${NC}"
+    docker run --rm \
+      -v "/etc/letsencrypt:/etc/letsencrypt" \
+      -v "/var/lib/letsencrypt:/var/lib/letsencrypt" \
+      -p 80:80 \
+      certbot/certbot certonly --standalone \
+        -d "$DOMAIN" \
+      --email "$EMAIL" \
+      --agree-tos \
+      --no-eff-email \
+      --non-interactive \
+      $STAGING_FLAG \
+    || FAILED_DOMAINS+=("$DOMAIN")
+done
 
 # --- 3. Restart Load Balancer ---
 echo -e "${YELLOW}[3/3] Restarting Nginx Load Balancer...${NC}"
 docker compose start load_balancer
 
-# --- Result Check ---
-if [ $EXIT_CODE -eq 0 ]; then
-    echo -e "${GREEN}SUCCESS! Certificate obtained for $DOMAIN${NC}"
-    echo -e "Certificates should be in: /etc/letsencrypt/live/$DOMAIN/"
-    echo -e "Ensure your Nginx config is updated to use these certificates."
+# --- Result ---
+if [ ${#FAILED_DOMAINS[@]} -eq 0 ]; then
+    echo -e "${GREEN}SUCCESS! Certificates obtained for: ${DOMAINS[*]}${NC}"
+    echo ""
+    echo "Certificate paths:"
+    for DOMAIN in "${DOMAINS[@]}"; do
+        echo "  - /etc/letsencrypt/live/${DOMAIN}/fullchain.pem"
+    done
+    echo ""
+    echo "Update your nginx host config with:"
+    echo "  setup-nginx-host.sh --app-domain=<domain> [--reverb-domain=<d> ...]"
 else
-    echo -e "${RED}FAILED! Certbot could not obtain certificate.${NC}"
+    echo -e "${RED}FAILED for: ${FAILED_DOMAINS[*]}${NC}"
     echo "Check the error logs above."
-    # Attempt to start LB anyway so site isn't down forever
     exit 1
 fi

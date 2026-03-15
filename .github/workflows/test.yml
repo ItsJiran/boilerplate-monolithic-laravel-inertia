@@ -71,7 +71,6 @@ jobs:
           fi
 
           sudo ./setup.sh setup-hosts.sh
-          sudo ./setup.sh setup-nginx-host.sh
 
       # -------------------------------------------------------------
       # 1.5. Install Dependencies (With Caching)
@@ -171,8 +170,13 @@ jobs:
 
           # 4. Setup Host Nginx (Requires Sudo)
           chmod +x scripts/setup/setup-nginx-host.sh
+          # run.dev.ssl.sh writes SSL_CERT_PATH/SSL_KEY_PATH into .env (shared SAN cert)
+          SSL_CERT_PATH="$(grep '^SSL_CERT_PATH=' .env | cut -d '=' -f2-)"
+          SSL_KEY_PATH="$(grep '^SSL_KEY_PATH=' .env | cut -d '=' -f2-)"
           # The script checks for sudo internally, but in CI we run as user 'runner', so use sudo
-          sudo ./setup.sh setup-nginx-host.sh
+          sudo ./setup.sh setup-nginx-host.sh \
+            --ssl-cert="$SSL_CERT_PATH" \
+            --ssl-key="$SSL_KEY_PATH"
 
           # 5. Setup /etc/hosts (Ephemeral DNS)
           # We need to point APP_DOMAIN to 127.0.0.1

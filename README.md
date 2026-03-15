@@ -232,10 +232,30 @@ sudo scripts/setup/setup-nginx-host.sh \
 	--hmr-domain=
 ```
 
+Development (Step CA shared cert for all selected domains):
+```bash
+sudo scripts/setup/setup-nginx-host.sh \
+	--app-domain=myapp.local \
+	--reverb-domain=reverb.myapp.local \
+	--s3-domain=s3.myapp.local \
+	--ssl-cert=/etc/nginx/ssl/myapp.pem \
+	--ssl-key=/etc/nginx/ssl/myapp.key
+```
+
+Production (Let's Encrypt cert per domain, auto-derived path):
+```bash
+sudo scripts/setup/setup-nginx-host.sh \
+	--app-domain=myapp.com \
+	--reverb-domain=reverb.myapp.com \
+	--s3-domain=s3.myapp.com
+```
+
 Notes:
 - Script akan generate `infra/nginx/default.conf` dari `infra/nginx/default.conf.lb.template`.
 - Script juga generate config host-vps dari `infra/nginx/default.host.vps.template`.
 - Domain optional yang dikosongkan (`--hmr-domain=`, `--pma-domain=`) akan dihapus section server block-nya agar tidak bentrok.
+- `--ssl-cert` dan `--ssl-key` dipakai untuk shared cert (umumnya dev Step CA/SAN cert).
+- Tanpa `--ssl-cert`/`--ssl-key`, script otomatis pakai pola certbot: `/etc/letsencrypt/live/<domain>/fullchain.pem` dan `privkey.pem`.
 
 ### 4. Setup SSL Development
 
@@ -260,12 +280,17 @@ Notes:
 
 > **Production**: Use Let's Encrypt. See `infra/LETSENCRYPT.md`.
 
-Example (argument-based SSL domains):
+Example (argument-based SSL domains, one cert per domain):
 ```bash
 bash scripts/run/run.prod.ssl.sh --domains=myapp.com,api.myapp.com,reverb.myapp.com --email admin@myapp.com
 # or repeated manual domains:
 bash scripts/run/run.prod.ssl.sh --domain=myapp.com --domain=api.myapp.com --email admin@myapp.com
 ```
+
+Result:
+- Certbot dijalankan 1x per domain (`-d <domain>`), sehingga setiap domain punya path sendiri:
+- `/etc/letsencrypt/live/myapp.com/fullchain.pem`
+- `/etc/letsencrypt/live/api.myapp.com/fullchain.pem`
 
 ### 5. Setup Monitoring Config
 

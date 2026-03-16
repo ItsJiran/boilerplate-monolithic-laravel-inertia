@@ -9,16 +9,34 @@ window.Pusher = Pusher;
 
 // Ambil nilai dari meta tag HTML
 const reverbKey = document.querySelector('meta[name="reverb-app-key"]')?.getAttribute('content');
-const reverbHost = document.querySelector('meta[name="reverb-host"]')?.getAttribute('content');
-const reverbScheme = document.querySelector('meta[name="reverb-scheme"]')?.getAttribute('content') ?? 'https';
+const rawReverbHost = document.querySelector('meta[name="reverb-host"]')?.getAttribute('content') ?? '';
+const rawReverbScheme = document.querySelector('meta[name="reverb-scheme"]')?.getAttribute('content') ?? 'https';
+
+const normalizedReverbScheme = rawReverbScheme
+    .trim()
+    .toLowerCase()
+    .replace(/:\/\/$/, '')
+    .replace(/:\/$/, '')
+    .replace(/\/$/, '');
+
+// Prevent malformed ws URL such as `wss://https//reverb.myapp.test`.
+const normalizedReverbHost = rawReverbHost
+    .trim()
+    .replace(/^https?:\/\//i, '')
+    .replace(/^https?\/\//i, '')
+    .replace(/^wss?:\/\//i, '')
+    .replace(/\/.*$/, '');
+
+const wsHost = normalizedReverbHost || window.location.hostname;
+const forceTLS = normalizedReverbScheme === 'https' || normalizedReverbScheme === 'wss' || window.location.protocol === 'https:';
 
 window.Echo = new Echo({
     broadcaster: 'reverb',
     key: reverbKey,
-    wsHost: reverbHost,
+    wsHost,
     wsPort: 80,
     wssPort: 443,
-    forceTLS: reverbScheme === 'https' || window.location.protocol === 'https:',
+    forceTLS,
     enabledTransports: ['ws', 'wss'],
 });
 

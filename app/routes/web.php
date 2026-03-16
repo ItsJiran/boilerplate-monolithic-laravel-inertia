@@ -7,8 +7,8 @@ use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\SettingsController;
 use App\Http\Controllers\UploadController;
 use App\Http\Controllers\TestController;
-use App\Http\Middleware\EnsureRole;
 use Illuminate\Foundation\Application;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 
@@ -19,7 +19,7 @@ Route::get('/', function () {
     'laravelVersion' => Application::VERSION,
     'phpVersion' => PHP_VERSION,
     ]);
-});
+})->name('home');
 
 // Example API Routes Here if needed
 
@@ -27,25 +27,9 @@ Route::middleware([
     'auth',
 ])->group(function () {
 
-    // + =================================
-    // + ---- Middleware Admin GLOBAL ----
-    // + =================================
-
-    Route::middleware([EnsureRole::class . ':admin,superadmin'])->group(function () {
-        // Boilerplate Admin Features Here
-        }
-        );
-
-        // + ===========================================
-        // + ---- Middleware Role Based Component ----
-        // + ===========================================
-    
-        Route::middleware([EnsureRole::class . ':admin,user'])->group(function () {
-            Route::get('/dashboard', [DashboardController::class , 'index'])->name('dashboard');
+        Route::get('/dashboard', [DashboardController::class , 'index'])->name('dashboard');
 
         // TODO: Add generic feature routes here
-        }
-        );
 
         // Notifications
         Route::get('/notifications', [NotificationController::class , 'index'])->name('notifications.index');
@@ -61,10 +45,12 @@ Route::middleware([
     });
 
 // Test Routes (made public)
-Route::get('/test/db', [TestController::class , 'database'])->name('test.db');
-Route::get('/test/socket', [TestController::class , 'socket'])->name('test.socket');
+Route::get('/test', [TestController::class , 'index'])->name('test.index');
+Route::get('/test/db', fn (): RedirectResponse => redirect()->route('test.index'))->name('test.db');
+Route::get('/test/socket', fn (): RedirectResponse => redirect()->route('test.index'))->name('test.socket');
 Route::get('/test/trigger-socket', [TestController::class , 'triggerSocket'])->name('test.trigger_socket');
-Route::get('/test/notification', [TestController::class , 'notification'])->name('test.notification');
+Route::get('/test/notification', fn (): RedirectResponse => redirect()->route('test.index'))->name('test.notification');
+Route::post('/test/migrate', [TestController::class , 'migrate'])->name('test.migrate');
 Route::post('/test/trigger-notification', [TestController::class , 'triggerNotification'])->name('test.trigger_notification');
 
 

@@ -23,12 +23,14 @@ export default function Welcome({ auth, laravelVersion, phpVersion }) {
                             </div>
                             
                             <nav className="flex items-center gap-4 text-sm font-medium">
-                                <Link
-                                    href={route('test.db')}
-                                    className="text-slate-600 hover:text-indigo-600 transition-colors"
-                                >
-                                    Database Test
-                                </Link>
+                                <div className="hidden sm:flex items-center gap-3 text-slate-600">
+                                    <Link
+                                        href={route('test.index')}
+                                        className="hover:text-indigo-600 transition-colors"
+                                    >
+                                        Test Center
+                                    </Link>
+                                </div>
                                 
                                 {auth.user ? (
                                     <Link
@@ -103,6 +105,18 @@ export default function Welcome({ auth, laravelVersion, phpVersion }) {
                                             </Link>
                                         </>
                                     )}
+                                </div>
+
+                                <div className="mt-8">
+                                    <p className="text-xs font-semibold tracking-[0.14em] text-slate-500 uppercase">Quick Test</p>
+                                    <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
+                                        <Link
+                                            href={route('test.index')}
+                                            className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:border-indigo-200 hover:text-indigo-700 transition"
+                                        >
+                                            Open Test Center
+                                        </Link>
+                                    </div>
                                 </div>
                             </div>
 

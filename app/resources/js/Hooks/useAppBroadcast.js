@@ -1,4 +1,5 @@
 import { router, usePage } from '@inertiajs/react';
+import { useEffect, useState } from 'react';
 import useAuthStore from '@/Stores/useAuthStore';
 import useBroadcast from '@/Hooks/useBroadcast';
 import { useCurrentTenantId } from '@/Hooks/useTenantSelection';
@@ -8,6 +9,33 @@ export default function useAppBroadcast() {
     const { component } = usePage();
     const profile = useAuthStore((state) => state.profile);
     const tenantId = useCurrentTenantId();
+    const [isConnected, setIsConnected] = useState(() => {
+        const connectionState = window?.Echo?.connector?.pusher?.connection?.state;
+        return connectionState === 'connected';
+    });
+
+    useEffect(() => {
+        const connection = window?.Echo?.connector?.pusher?.connection;
+        if (!connection) {
+            setIsConnected(false);
+            return;
+        }
+
+        const handleConnected = () => setIsConnected(true);
+        const handleDisconnected = () => setIsConnected(false);
+
+        connection.bind('connected', handleConnected);
+        connection.bind('disconnected', handleDisconnected);
+        connection.bind('unavailable', handleDisconnected);
+        connection.bind('failed', handleDisconnected);
+
+        return () => {
+            connection.unbind('connected', handleConnected);
+            connection.unbind('disconnected', handleDisconnected);
+            connection.unbind('unavailable', handleDisconnected);
+            connection.unbind('failed', handleDisconnected);
+        };
+    }, []);
 
     // Automatically listen to the test channel in Developer Mode
     // A leading dot is required because the backend event uses a custom `broadcastAs` name.
@@ -142,4 +170,8 @@ export default function useAppBroadcast() {
     // (The tenant channel above is already subscribed; handleMarketingActivityEvent is idempotent.)
     useBroadcast(userPrivateChannel, '.activity.created', (data) => handleMarketingActivityEvent('Created', data), 'private');
     useBroadcast(userPrivateChannel, '.activity.updated', (data) => handleMarketingActivityEvent('Updated', data), 'private');
+
+    return {
+        isConnected,
+    };
 }

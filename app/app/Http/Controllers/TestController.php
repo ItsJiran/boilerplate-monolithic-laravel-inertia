@@ -2,14 +2,17 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\User;
 use App\Services\Shared\AppResponse;
+use Illuminate\Foundation\Application;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 
 class TestController extends Controller
 {
-    public function database()
+    public function index()
     {
         $status = 'Connected';
         $version = 'Unknown';
@@ -24,30 +27,43 @@ class TestController extends Controller
             $error = $e->getMessage();
         }
 
-        return Inertia::render('Test/Database', [
+        return Inertia::render('Test/Index', [
             'status' => $status,
             'version' => $version,
             'error' => $error,
+            'laravelVersion' => Application::VERSION,
+            'phpVersion' => PHP_VERSION,
         ]);
-    }
-
-    public function socket()
-    {
-        return Inertia::render('Test/Socket');
     }
 
     public function triggerSocket(Request $request)
     {
-        // For testing we will just broadcast a generic status
-        $userId = $request->user() ? $request->user()->id : 1; // Fallback to ID 1 if public
+        // For testing we need a user id that actually exists to satisfy FK constraints.
+        $userId = $this->resolveTestUserId($request);
+        if (!$userId) {
+            return AppResponse::error('No user found. Please register/login first before triggering socket test.', null, 422);
+        }
+
         \App\Events\NotificationUpdated::dispatch($userId, 999);
 
         return AppResponse::success('Socket event dispatched');
     }
 
-    public function notification()
+    public function migrate()
     {
-        return Inertia::render('Test/Notification');
+        if (app()->isProduction()) {
+            return AppResponse::error('Migration from Test Center is disabled in production.', null, 403);
+        }
+
+        try {
+            Artisan::call('migrate', [
+                '--force' => true,
+            ]);
+
+            return AppResponse::success('Migration completed successfully.');
+        } catch (\Throwable $exception) {
+            return AppResponse::error('Migration failed: ' . $exception->getMessage(), null, 500);
+        }
     }
 
     public function triggerNotification(Request $request, \App\Services\Notification\NotificationService $service)
@@ -58,7 +74,11 @@ class TestController extends Controller
             'type' => 'nullable|string',
         ]);
 
-        $userId = $request->user() ? $request->user()->id : 1; // Fallback to ID 1 if public
+        $userId = $this->resolveTestUserId($request);
+        if (!$userId) {
+            return AppResponse::error('No user found. Please register/login first before triggering notification test.', null, 422);
+        }
+
         $service->create($userId, [
             'type' => $request->input('type', 'info'),
             'title' => $request->input('title'),
@@ -68,5 +88,15 @@ class TestController extends Controller
         return AppResponse::success([
             'message' => 'Notification triggered!',
         ]);
+    }
+
+    private function resolveTestUserId(Request $request): ?int
+    {
+        if ($request->user()?->id) {
+            return (int) $request->user()->id;
+        }
+
+        $firstUserId = User::query()->value('id');
+        return $firstUserId ? (int) $firstUserId : null;
     }
 }

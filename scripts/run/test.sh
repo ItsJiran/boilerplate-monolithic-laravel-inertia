@@ -1,14 +1,21 @@
 #!/bin/bash
 
 # =========================================================
-# FEATURE TESTING SCRIPT (Runs inside Docker)
+# TEST ENTRYPOINT
 # =========================================================
-# This script executes the Laravel Feature Tests.
-# It can be run locally or within a CI/CD pipeline (e.g., GitHub Actions).
-# 
-# Usage: ./test.sh [arguments for php artisan test]
-# Example: ./test.sh --filter UserTest
+# Behavior:
+# 1) If service "app" exists and is running, run Laravel tests.
+# 2) Otherwise run stack integration checks for Next.js/WordPress.
 # =========================================================
 
-docker compose exec -it app php artisan test "$@"
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+if docker compose ps --services --filter "status=running" | grep -q '^app$'; then
+	docker compose exec -it app php artisan test "$@"
+else
+	echo "[INFO] Service 'app' tidak berjalan. Menjalankan integration checks..."
+	bash "$SCRIPT_DIR/test.services.sh"
+fi
 

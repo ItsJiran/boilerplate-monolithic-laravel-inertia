@@ -35,6 +35,46 @@ load_envs() {
     set +a
 }
 
+ensure_app_network() {
+    local network_name="${APP_NETWORK:-app_network}"
+
+    if docker network inspect "$network_name" >/dev/null 2>&1; then
+        return 0
+    fi
+
+    echo -e "${YELLOW}[INFO]${NC} Network '$network_name' belum ada. Membuat network..."
+    docker network create "$network_name" >/dev/null
+    echo -e "${GREEN}[OK]${NC} Network '$network_name' siap digunakan."
+}
+
+load_services_from_compose() {
+    # Cara utama: gunakan parser resmi docker compose
+    mapfile -t SERVICES < <(docker compose -f "$COMPOSE_FILE" config --services 2>/dev/null)
+
+    if [ "${#SERVICES[@]}" -gt 0 ]; then
+        return 0
+    fi
+
+    # Fallback: parse langsung dari blok `services:` jika interpolasi env gagal
+    mapfile -t SERVICES < <(
+        awk '
+            /^services:[[:space:]]*$/ { in_services=1; next }
+            in_services && /^[^[:space:]]/ { in_services=0 }
+            in_services && /^  [a-zA-Z0-9_.-]+:[[:space:]]*$/ {
+                svc=$0
+                sub(/^[[:space:]]+/, "", svc)
+                sub(/:[[:space:]]*$/, "", svc)
+                print svc
+            }
+        ' "$COMPOSE_FILE"
+    )
+
+    if [ "${#SERVICES[@]}" -eq 0 ]; then
+        echo -e "${RED}[ERROR] Gagal membaca service dari '$COMPOSE_FILE'.${NC}"
+        exit 1
+    fi
+}
+
 append_services_from_csv() {
     local csv="$1"
     local parsed=()
@@ -46,6 +86,8 @@ append_services_from_csv() {
 }
 
 run_up_non_interactive() {
+    ensure_app_network
+
     if [ "${#NON_INTERACTIVE_SERVICES[@]}" -eq 0 ]; then
         echo -e "${GREEN}[EXEC] Starting all services (Non-Interactive)...${NC}"
         docker compose -f "$COMPOSE_FILE" up -d "${NON_INTERACTIVE_FLAGS[@]}"
@@ -161,30 +203,13 @@ if [ ! -f "$COMPOSE_FILE" ]; then
     exit 1
 fi
 
-# --- Daftar Service Sesuai docker compose.yml ---
-SERVICES=(
-    "mariadb"
-    "db-init"
-    "phpmyadmin"
-    "redis"
-    "app"
-    "app-hmr"
-    "app-worker"
-    "app-socket"
-    "app-cron"
-    "client"
-    "load_balancer"
-    "minio"
-    "createbuckets"
-)
+load_envs
+load_services_from_compose
 
 # --- Daftar Volume ---
 VOLUMES=(
-    "${DEFAULT_APP_SLUG}-data"
-    "${DEFAULT_APP_SLUG}-mariadb-data"
-    "${DEFAULT_APP_SLUG}-redis-data"
-    "${DEFAULT_APP_SLUG}-storage"
-    "${DEFAULT_APP_SLUG}-minio-data"
+    "app-mariadb-data"
+    "app-redis-data"
 )
 
 # --- Fungsi Cek/Buat Volume (Silently) ---
@@ -268,24 +293,28 @@ service_selector() {
 
 run_docker() {
     load_envs
+    ensure_app_network
     echo -e "${GREEN}[EXEC] Up: docker compose up -d $1${NC}"
     docker compose -f "$COMPOSE_FILE" up -d $1
 }
 
 restart_docker() {
     load_envs
+    ensure_app_network
     echo -e "${GREEN}[EXEC] Restart: docker compose restart $1${NC}"
     docker compose -f "$COMPOSE_FILE" restart $1
 }
 
 rebuild_docker() {
     load_envs
+    ensure_app_network
     echo -e "${GREEN}[EXEC] Rebuild & Up: docker compose up -d --build $1${NC}"
     docker compose -f "$COMPOSE_FILE" up -d --build $1
 }
 
 recreate_docker() {
     load_envs
+    ensure_app_network
     echo -e "${GREEN}[EXEC] Force Recreate: docker compose up -d --force-recreate $1${NC}"
     docker compose -f "$COMPOSE_FILE" up -d --force-recreate $1
 }
@@ -293,6 +322,7 @@ recreate_docker() {
 # --- LOGIC BARU: RELOAD (ZERO DOWNTIME - FIXED) ---
 reload_docker() {
     load_envs
+    ensure_app_network
     local selected_services="$1"
     
     if [[ -z "$selected_services" ]]; then
@@ -311,35 +341,30 @@ reload_docker() {
         fi
 
         case $svc in
-            "load_balancer"|"nginx")
-                # Nginx biasanya punya binary 'nginx' di dalamnya, jadi aman pakai exec
+            "nginx"|"load_balancer")
+                # Nginx reload
+                echo -e "${GREEN}   [EXEC] Reloading Nginx...${NC}"
                 docker compose -f "$COMPOSE_FILE" exec "$svc" nginx -s reload
-                echo -e "${GREEN}   [OK] Nginx reloaded.${NC}"
                 ;;
             
-            "app"|"worker"|"scheduler")
-                # FIX: Menggunakan 'docker compose kill' (Signal Injection)
-                # Ini TIDAK butuh binary 'kill' di dalam container.
+            "wordpress"|"app")
+                # PHP-FPM reload (USR2)
+                echo -e "${GREEN}   [EXEC] Reloading App worker process...${NC}"
                 docker compose -f "$COMPOSE_FILE" kill -s USR2 "$svc"
-                echo -e "${GREEN}   [OK] PHP-Service reloaded (Signal USR2 Sent).${NC}"
                 ;;
-            
-            "reverb")
-                 # Reverb benefits from a full restart to ensure clean state or use signal if supported
-                 # Assuming restart is safer for WebSocket server to reload config/code
-                 echo -e "${GREEN}   [EXEC] Restarting Reverb...${NC}"
-                 docker compose -f "$COMPOSE_FILE" restart "$svc"
-                 ;;
 
-            "mariadb"|"redis"|"minio")
-                echo -e "${RED}   [WARN] Database/Store tidak support hot-reload.${NC}"
-                echo -e "   Gunakan menu Restart jika config berubah."
+            "nextjs"|"app-hmr")
+                echo -e "${GREEN}   [EXEC] Restarting frontend/hmr service...${NC}"
+                docker compose -f "$COMPOSE_FILE" restart "$svc"
+                ;;
+
+            "mariadb"|"redis")
+                echo -e "${RED}   [WARN] Database/Store tidak support hot-reload. Gunakan Restart.${NC}"
                 ;;
             
             *)
-                # Default fallback: kirim sinyal SIGHUP dari luar
-                echo -e "${BLUE}   [INFO] Mengirim sinyal SIGHUP ke $svc...${NC}"
-                docker compose -f "$COMPOSE_FILE" kill -s SIGHUP "$svc"
+                echo -e "${BLUE}   [INFO] Restarting generic service $svc...${NC}"
+                docker compose -f "$COMPOSE_FILE" restart "$svc"
                 ;;
         esac
     done

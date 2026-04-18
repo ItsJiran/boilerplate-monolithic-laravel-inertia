@@ -14,6 +14,12 @@ source ./.env
 source ./.env.backend
 source ./.env.devops
 
+NGINX_TEMPLATE_ENV_ARGS=(
+	-E .env
+	-E .env.backend
+	-E .env.devops
+)
+
 # Fallback jika APP_SLUG kosong/ketimpa oleh file env lain.
 APP_SLUG_SAFE="${APP_SLUG:-}"
 if [ -z "$APP_SLUG_SAFE" ]; then
@@ -24,36 +30,125 @@ fi
 # ----------------------------------------------------------
 # Step 2: Provision production SSL certificates (Let's Encrypt)
 
-./run.sh run.prod.ssl.sh --domains="${APP_DOMAIN:-},${API_DOMAIN:-},${REVERB_DOMAIN:-},${S3_DOMAIN:-},${S3_CONSOLE_DOMAIN:-},${PMA_DOMAIN:-}" --email="${CERTBOT_EMAIL:-admin@${APP_DOMAIN:-example.com}}"
+./run.sh run.prod.ssl.sh --domains="${APP_DOMAIN:-},${CMS_DOMAIN:-},${S3_DOMAIN:-},${S3_CONSOLE_DOMAIN:-},${PMA_DOMAIN:-}" --email="${CERTBOT_EMAIL:-admin@${APP_DOMAIN:-example.com}}"
 
 # ----------------------------------------------------------
 # Step 3: Build nginx host templates for VPS
 
-./setup.sh setup-nginx-host-template.sh --single --service=app --domain="${APP_DOMAIN:-${APP_URL:-app.example.com}}" --host-file-name="${APP_DOMAIN:-app.example.com}" --ssl-mode=letsencrypt
-./setup.sh setup-nginx-host-template.sh --single --service=pma --domain="${PMA_DOMAIN:-${PMA_ABSOLUTE_URI:-pma.${APP_DOMAIN:-app.example.com}}}" --host-file-name="${APP_DOMAIN:-app.example.com}" --ssl-mode=letsencrypt
-./setup.sh setup-nginx-host-template.sh --single --service=s3 --domain="${S3_DOMAIN:-${S3_URL:-s3.${APP_DOMAIN:-app.example.com}}}" --host-file-name="${APP_DOMAIN:-app.example.com}" --ssl-mode=letsencrypt
-./setup.sh setup-nginx-host-template.sh --single --service=s3-console --domain="${S3_CONSOLE_DOMAIN:-${S3_CONSOLE_URL:-s3-console.${APP_DOMAIN:-app.example.com}}}" --host-file-name="${APP_DOMAIN:-app.example.com}" --ssl-mode=letsencrypt
-./setup.sh setup-nginx-host-template.sh --single --service=reverb --domain="${REVERB_DOMAIN:-${REVERB_URL:-reverb.${APP_DOMAIN:-app.example.com}}}" --host-file-name="${APP_DOMAIN:-app.example.com}" --ssl-mode=letsencrypt
+HOST_FILE_NAME="${APP_DOMAIN:-app.example.com}"
+SSL_CERT_PATH="${SSL_CERT_PATH:-/etc/letsencrypt/live/${HOST_FILE_NAME}/fullchain.pem}"
+SSL_KEY_PATH="${SSL_KEY_PATH:-/etc/letsencrypt/live/${HOST_FILE_NAME}/privkey.pem}"
+
+./setup.sh setup-nginx-template.sh -f \
+	-o infra/nginx/default.conf.vps.template \
+	-t infra/nginx/templates/vps/base.conf \
+	"${NGINX_TEMPLATE_ENV_ARGS[@]}" \
+	-v \
+	SSL_CERT_PATH="${SSL_CERT_PATH}" \
+	SSL_KEY_PATH="${SSL_KEY_PATH}"
+
+./setup.sh setup-nginx-template.sh -a \
+	-o infra/nginx/default.conf.vps.template \
+	-t infra/nginx/templates/vps/cms.conf \
+	"${NGINX_TEMPLATE_ENV_ARGS[@]}" \
+	-v \
+	SSL_CERT_PATH="${SSL_CERT_PATH}" \
+	SSL_KEY_PATH="${SSL_KEY_PATH}" \
+	LOAD_BALANCER_PORT="${LOAD_BALANCER_PORT:-80}"
+
+./setup.sh setup-nginx-template.sh -a \
+	-o infra/nginx/default.conf.vps.template \
+	-t infra/nginx/templates/vps/minio.conf \
+	"${NGINX_TEMPLATE_ENV_ARGS[@]}" \
+	-v \
+	SSL_CERT_PATH="${SSL_CERT_PATH}" \
+	SSL_KEY_PATH="${SSL_KEY_PATH}" \
+	LOAD_BALANCER_PORT="${LOAD_BALANCER_PORT:-80}"
+
+./setup.sh setup-nginx-template.sh -a \
+	-o infra/nginx/default.conf.vps.template \
+	-t infra/nginx/templates/vps/pma.conf \
+	"${NGINX_TEMPLATE_ENV_ARGS[@]}" \
+	-v \
+	SSL_CERT_PATH="${SSL_CERT_PATH}" \
+	SSL_KEY_PATH="${SSL_KEY_PATH}" \
+	LOAD_BALANCER_PORT="${LOAD_BALANCER_PORT:-80}"
+
+./setup.sh setup-nginx-template.sh -a \
+	-o infra/nginx/default.conf.vps.template \
+	-t infra/nginx/templates/vps/grafana.conf \
+	"${NGINX_TEMPLATE_ENV_ARGS[@]}" \
+	-v \
+	GRAFANA_PORT="${GRAFANA_PORT:-3000}" \
+	SSL_CERT_PATH="${SSL_CERT_PATH}" \
+	SSL_KEY_PATH="${SSL_KEY_PATH}"
+
+./setup.sh setup-nginx-template.sh -a \
+	-o infra/nginx/default.conf.vps.template \
+	-t infra/nginx/templates/vps/reverb.conf \
+	"${NGINX_TEMPLATE_ENV_ARGS[@]}" \
+	-v \
+	SSL_CERT_PATH="${SSL_CERT_PATH}" \
+	SSL_KEY_PATH="${SSL_KEY_PATH}" \
+	LOAD_BALANCER_PORT="${LOAD_BALANCER_PORT:-80}"
+
+./setup.sh setup-nginx-template.sh -a \
+	-o infra/nginx/default.conf.vps.template \
+	-t infra/nginx/templates/vps/hmr.conf \
+	"${NGINX_TEMPLATE_ENV_ARGS[@]}" \
+	-v \
+	SSL_CERT_PATH="${SSL_CERT_PATH}" \
+	SSL_KEY_PATH="${SSL_KEY_PATH}" \
+	LOAD_BALANCER_PORT="${LOAD_BALANCER_PORT:-80}"
+
+if grep -qE '^NGINX_HOST_FILE_NAME=' .env.devops; then
+	sed -i "s|^NGINX_HOST_FILE_NAME=.*|NGINX_HOST_FILE_NAME=${HOST_FILE_NAME}|" .env.devops
+else
+	echo "NGINX_HOST_FILE_NAME=${HOST_FILE_NAME}" >> .env.devops
+fi
 
 # ----------------------------------------------------------
 # Step 4: Build nginx LB templates for docker nginx
 
-./setup.sh setup-nginx-template.sh --single --service=app --domain="${APP_DOMAIN:-${APP_URL:-app.example.com}}"
-./setup.sh setup-nginx-template.sh --single --service=pma --domain="${PMA_DOMAIN:-${PMA_ABSOLUTE_URI:-pma.${APP_DOMAIN:-app.example.com}}}"
-./setup.sh setup-nginx-template.sh --single --service=s3 --domain="${S3_DOMAIN:-${S3_URL:-s3.${APP_DOMAIN:-app.example.com}}}"
-./setup.sh setup-nginx-template.sh --single --service=s3-console --domain="${S3_CONSOLE_DOMAIN:-${S3_CONSOLE_URL:-s3-console.${APP_DOMAIN:-app.example.com}}}"
-./setup.sh setup-nginx-template.sh --single --service=reverb --domain="${REVERB_DOMAIN:-${REVERB_URL:-reverb.${APP_DOMAIN:-app.example.com}}}"
+./setup.sh setup-nginx-template.sh -f \
+	-o infra/nginx/default.conf.lb.template \
+	-t infra/nginx/templates/base.conf \
+	"${NGINX_TEMPLATE_ENV_ARGS[@]}" \
+	-v \
+	APP_PORT="${APP_PORT:-3000}"
+
+./setup.sh setup-nginx-template.sh -a \
+	-o infra/nginx/default.conf.lb.template \
+	-t infra/nginx/templates/cms.conf \
+	"${NGINX_TEMPLATE_ENV_ARGS[@]}"
+
+./setup.sh setup-nginx-template.sh -a \
+	-o infra/nginx/default.conf.lb.template \
+	-t infra/nginx/templates/minio.conf \
+	"${NGINX_TEMPLATE_ENV_ARGS[@]}"
+
+./setup.sh setup-nginx-template.sh -a \
+	-o infra/nginx/default.conf.lb.template \
+	-t infra/nginx/templates/pma.conf \
+	"${NGINX_TEMPLATE_ENV_ARGS[@]}"
+
+./setup.sh setup-nginx-template.sh -a \
+	-o infra/nginx/default.conf.lb.template \
+	-t infra/nginx/templates/reverb.conf \
+	"${NGINX_TEMPLATE_ENV_ARGS[@]}" \
+	-v \
+	REVERB_SERVER_PORT="${REVERB_SERVER_PORT:-8080}"
 
 # ----------------------------------------------------------
 # Step 5: Deploy host nginx template into /etc/nginx
 
-./setup.sh setup-nginx-host-vps.sh --file-name="${APP_DOMAIN:-app.example.com}"
+./setup.sh setup-nginx-file-to-host-conf.sh --file-name="${APP_DOMAIN:-app.example.com}"
 
 # ----------------------------------------------------------
 # Step 6: Deploy production application workflow
 
 APP_PROD_SERVICES_BOOTSTRAP="mariadb redis db-init"
 APP_PROD_SERVICES_RUNTIME="app app-worker app-socket app-cron load_balancer"
-
+nextjs wordpress nginx
 ./run.sh run.app.sh up --file docker-compose.prod.yml --one-by-one $APP_PROD_SERVICES_BOOTSTRAP
 ./run.sh run.app.sh up --file docker-compose.prod.yml --one-by-one $APP_PROD_SERVICES_RUNTIME

@@ -7,8 +7,8 @@
 # via Docker (Standalone Mode).
 #
 # Usage:
-#   ./run.prod.ssl.sh --domain=myapp.com --domain=api.myapp.com --email admin@example.com
-#   ./run.prod.ssl.sh --domains=myapp.com,api.myapp.com,reverb.myapp.com --email admin@example.com
+#   ./run.prod.ssl.sh --domain=jiran.com --domain=api.jiran.com --email admin@example.com
+#   ./run.prod.ssl.sh --domains=jiran.com,api.jiran.com,reverb.jiran.com --email admin@example.com
 # 
 # Note: This script temporarily stops the 'load_balancer' service
 # to allow Certbot to bind to port 80 for validation.
@@ -38,8 +38,8 @@ Options:
     --help               Tampilkan bantuan
 
 Contoh:
-    $0 --domain=myapp.com --domain=api.myapp.com --email admin@myapp.com
-    $0 --domains=myapp.com,api.myapp.com,reverb.myapp.com --email admin@myapp.com
+    $0 --domain=jiran.com --domain=api.jiran.com --email admin@jiran.com
+    $0 --domains=jiran.com,api.jiran.com,reverb.jiran.com --email admin@jiran.com
 EOF
 }
 
@@ -145,9 +145,9 @@ echo -e "Mode    : ${YELLOW}Standalone per-domain (Docker)${NC}"
 [ -n "$STAGING_FLAG" ] && echo -e "${YELLOW}(STAGING mode - certificates will NOT be trusted)${NC}"
 echo ""
 
-# --- 1. Stop Load Balancer (Port 80 Conflict) ---
+# --- 1. Stop Nginx (Port 80 Conflict) ---
 echo -e "${YELLOW}[1/3] Stopping Nginx Load Balancer to free Port 80...${NC}"
-docker compose stop load_balancer
+docker compose stop nginx
 
 # --- 2. Run Certbot per-domain ---
 # Each domain gets its own cert at /etc/letsencrypt/live/<domain>/
@@ -171,9 +171,9 @@ for DOMAIN in "${DOMAINS[@]}"; do
     || FAILED_DOMAINS+=("$DOMAIN")
 done
 
-# --- 3. Restart Load Balancer ---
+# --- 3. Restart Nginx ---
 echo -e "${YELLOW}[3/3] Restarting Nginx Load Balancer...${NC}"
-docker compose start load_balancer
+docker compose start nginx
 
 # --- Result ---
 if [ ${#FAILED_DOMAINS[@]} -eq 0 ]; then

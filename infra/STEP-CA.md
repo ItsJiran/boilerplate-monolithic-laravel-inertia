@@ -38,7 +38,7 @@ STEP_CA_NAME="App Boilerplate CA"
 STEP_CA_DNS="step-ca,localhost"
 STEP_CA_PROVISIONER="admin"
 STEP_CA_PASSWORD="changeme"           # ⚠️ CHANGE THIS IN PRODUCTION!
-STEP_CA_ADMIN="admin@myapp.test"
+STEP_CA_ADMIN="admin@jiran.test"
 STEP_CA_ADDRESS=":9000"
 ```
 
@@ -89,12 +89,12 @@ docker exec step-ca step certificate inspect /home/step/certs/root_ca.crt
 
 ### Request a New Certificate
 ```bash
-step ca certificate myapp.local myapp.crt myapp.key
+step ca certificate jiran.local jiran.crt jiran.key
 ```
 
 ### Renew a Certificate
 ```bash
-step ca renew myapp.crt myapp.key
+step ca renew jiran.crt jiran.key
 ```
 
 ### List Active Certificates
@@ -166,7 +166,7 @@ For production deployment, this application uses **Let's Encrypt** for SSL certi
 - ✅ **Trusted by all browsers** - No certificate warnings
 - ✅ **Free and automatic** - No manual certificate management
 - ✅ **Auto-renewal** - Certificates renew automatically before expiration
-- ✅ **Wildcard support** - Single cert for *.myapp.test
+- ✅ **Wildcard support** - Single cert for *.jiran.test
 - ✅ **Industry standard** - Used by millions of websites
 
 ### Production Setup (Let's Encrypt)
@@ -177,7 +177,7 @@ For production deployment, this application uses **Let's Encrypt** for SSL certi
    sudo apt install certbot python3-certbot-nginx
    
    # Get certificate
-   sudo certbot --nginx -d myapp.test -d www.myapp.test
+   sudo certbot --nginx -d jiran.test -d www.jiran.test
    
    # Auto-renewal (cron job is set automatically)
    sudo certbot renew --dry-run
@@ -199,7 +199,7 @@ For production deployment, this application uses **Let's Encrypt** for SSL certi
    traefik:
      image: traefik:v2.10
      command:
-       - "--certificatesresolvers.letsencrypt.acme.email=admin@myapp.test"
+       - "--certificatesresolvers.letsencrypt.acme.email=admin@jiran.test"
        - "--certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json"
        - "--certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=web"
    ```
@@ -215,8 +215,8 @@ CA_URL=https://localhost:9000
 # .env.production
 USE_STEP_CA=false
 SSL_PROVIDER=letsencrypt
-CERTBOT_EMAIL=admin@myapp.test
-DOMAIN=myapp.test
+CERTBOT_EMAIL=admin@jiran.test
+DOMAIN=jiran.test
 ```
 
 ## Security Notes
@@ -264,7 +264,7 @@ docker run --rm -v step-ca-data:/data -v $(pwd):/backup \
 1. Ensure CA certificate is in system trust store
 2. Check certificate expiration:
    ```bash
-   step certificate inspect myapp.crt
+   step certificate inspect jiran.crt
    ```
 
 ### Unable to Connect

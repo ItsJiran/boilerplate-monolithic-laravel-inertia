@@ -166,8 +166,9 @@ services:
       - ./app:/var/www/html:z
       - ./step-ca-public-root.pem:/usr/local/share/ca-certificates/step-ca-public-root.crt:ro
     extra_hosts:
-      - "${REVERB_EXTRA_HOST:-reverb.myapp.test}:host-gateway"
-      - "${API_EXTRA_HOST:-api.myapp.test}:host-gateway"
+      - "host.docker.internal:host-gateway"
+      - "${REVERB_URL}:host-gateway"
+      - "${API_URL}:host-gateway"
     restart: unless-stopped
     working_dir: /var/www/html
     logging:
@@ -202,8 +203,9 @@ services:
       - ./app:/var/www/html:z
       - ./step-ca-public-root.pem:/usr/local/share/ca-certificates/step-ca-public-root.crt:ro
     extra_hosts:
-      - "${REVERB_EXTRA_HOST:-reverb.myapp.test}:host-gateway"
-      - "${API_EXTRA_HOST:-api.myapp.test}:host-gateway"
+      - "host.docker.internal:host-gateway"
+      - "${REVERB_URL}:host-gateway"
+      - "${API_URL}:host-gateway"
     restart: unless-stopped
     working_dir: /var/www/html
     logging:
@@ -228,6 +230,10 @@ services:
       - ./.env
       - ./.env.backend
       - ./.env.devops
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+      - "${REVERB_URL}:host-gateway"
+      - "${API_URL}:host-gateway"
     networks:
       - app_network
     volumes:
@@ -264,6 +270,10 @@ services:
       - ./app:/var/www/html:z
       - ./step-ca-public-root.pem:/usr/local/share/ca-certificates/step-ca-public-root.crt:ro
     restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+      - "${REVERB_URL}:host-gateway"
+      - "${API_URL}:host-gateway"
     working_dir: /var/www/html
     logging:
       driver: "json-file"
@@ -293,6 +303,10 @@ services:
     # restart: unless-stopped # Cron jangan restart policy strict jika exit code 0 (though schedule:work runs forever)
     restart: unless-stopped
     working_dir: /var/www/html
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+      - "${REVERB_URL}:host-gateway"
+      - "${API_URL}:host-gateway"
     logging:
       driver: "json-file"
       options:
@@ -325,86 +339,6 @@ services:
       options:
         max-size: "5m"    # Maksimal 5 Megabyte per file
         max-file: "2"     # Maksimal 2 file (total 10MB)
-
-  # ==========================================
-  # 1. MINIO SERVICE (The S3 Server)
-  # ==========================================
-  minio:
-    hostname: minio
-    image: minio/minio:latest
-    restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          cpus: '${MINIO_CPU_LIMIT:-0}'
-          memory: '${MINIO_MEM_LIMIT:-0b}'
-    expose:
-      - "${MINIO_PORT}" 
-      - "${MINIO_CONSOLE_PORT}" 
-    env_file:
-      - ./.env
-      - ./.env.backend
-      - ./.env.devops
-    environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-sail}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-password}
-
-      MINIO_SERVER_URL: ${S3_URL}
-      MINIO_BROWSER_REDIRECT_URL: ${S3_CONSOLE_URL}
-    volumes:
-      - app-minio-data:/data
-    command: minio server /data --console-address ":${MINIO_CONSOLE_PORT}" --address ":${MINIO_PORT}"
-    networks:
-      - app_network
-    extra_hosts:
-      - "${S3_EXTRA_HOST:-s3.myapp.test}:host-gateway"
-      - "${S3_CONSOLE_EXTRA_HOST:-s3-console.myapp.test}:host-gateway"
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "5m"    # Maksimal 5 Megabyte per file
-        max-file: "2"     # Maksimal 2 file (total 10MB)
-
-  # ==========================================
-  # 2. AUTO CREATE BUCKET (Helper)
-  # ==========================================
-  createbuckets:
-    image: minio/mc
-    depends_on:
-      - minio
-    networks:
-      - app_network
-    environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-sail}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-password}
-      AWS_BUCKET: ${AWS_BUCKET:-app-bucket}
-    entrypoint:
-      - /bin/sh
-      - -c
-      - |
-        # Stop script jika terjadi error fatal (kecuali di dalam loop)
-        set -e
-
-        echo "⏳ Menunggu MinIO siap..."
-
-        # Loop 'mc alias set' sampai berhasil.
-        # Ini adalah cara paling valid menggantikan 'nc' karena image ini tidak punya netcat.
-        until /usr/bin/mc alias set myminio http://${MINIO_SERVICE}:${MINIO_PORT} "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD"; do
-          echo "zzz... MinIO belum siap, mencoba lagi dalam 2 detik..."
-          sleep 2
-        done
-
-        echo "🚀 MinIO Connected!"
-
-        echo "📦 Membuat bucket: $AWS_BUCKET"
-        # Gunakan '|| true' agar script tidak mati jika bucket sudah ada
-        /usr/bin/mc mb myminio/"$AWS_BUCKET" --ignore-existing || true
-
-        echo "🔓 Mengatur policy public..."
-        /usr/bin/mc anonymous set public myminio/"$AWS_BUCKET"
-
-        echo "✅ SETUP SELESAI!"
-        exit 0
 
 networks:
   app_network:

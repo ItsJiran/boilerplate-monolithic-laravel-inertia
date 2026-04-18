@@ -10,23 +10,24 @@ NC='\033[0m'
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(dirname "$(dirname "$SCRIPT_DIR")")"
 
-SOURCE_TEMPLATE="$ROOT_DIR/infra/nginx/default.conf.vps.template"
+SOURCE_FILE="$ROOT_DIR/infra/nginx/default.conf.vps.template"
 TARGET_DIR="/etc/nginx/sites-available"
 SYMLINK_DIR="/etc/nginx/sites-enabled"
 FILE_NAME=""
 COPY_TO=""
 DRY_RUN=0
 SKIP_RELOAD=0
+SKIP_SYMLINK=0
 RAW_FILE_NAME=""
 
 usage() {
   cat <<USAGE
 Usage: $0 [options]
 
-Deploy generated VPS nginx template into host nginx directory.
+Copy an nginx .conf file into sites-available and create a symlink in sites-enabled.
 
 Options:
-  --source=PATH        Source host template (default: infra/nginx/default.conf.vps.template)
+  --source=PATH        Source nginx conf file (default: infra/nginx/default.conf.vps.template)
   --file-name=NAME     Destination filename (without/with .conf)
   --target-dir=PATH    Destination directory (default: /etc/nginx/sites-available)
   --symlink-dir=PATH   Enabled sites dir (default: /etc/nginx/sites-enabled)
@@ -37,8 +38,6 @@ Options:
   --help
 USAGE
 }
-
-SKIP_SYMLINK=0
 
 ensure_conf_name() {
   local name="$1"
@@ -53,9 +52,26 @@ load_env() {
   local f="$1"
   if [ -f "$f" ]; then
     set -a
+    # shellcheck disable=SC1090
     source "$f"
     set +a
   fi
+}
+
+resolve_path() {
+  local input="$1"
+
+  if [[ "$input" = /* ]]; then
+    printf '%s\n' "$input"
+    return
+  fi
+
+  if [ -e "$input" ]; then
+    printf '%s\n' "$input"
+    return
+  fi
+
+  printf '%s\n' "$ROOT_DIR/$input"
 }
 
 ensure_root_or_sudo() {
@@ -97,7 +113,7 @@ cleanup_legacy_site_name() {
 
 for arg in "$@"; do
   case "$arg" in
-    --source=*) SOURCE_TEMPLATE="${arg#*=}" ;;
+    --source=*) SOURCE_FILE="${arg#*=}" ;;
     --file-name=*) FILE_NAME="${arg#*=}" ;;
     --target-dir=*) TARGET_DIR="${arg#*=}" ;;
     --symlink-dir=*) SYMLINK_DIR="${arg#*=}" ;;
@@ -115,22 +131,22 @@ load_env "$ROOT_DIR/.env.backend"
 load_env "$ROOT_DIR/.env.devops"
 
 if [ -z "$FILE_NAME" ]; then
-  default_name="${NGINX_HOST_FILE_NAME:-${APP_DOMAIN:-default}}"
-  FILE_NAME="$default_name"
+  FILE_NAME="${NGINX_HOST_FILE_NAME:-${APP_DOMAIN:-default}}"
 fi
 
+SOURCE_FILE="$(resolve_path "$SOURCE_FILE")"
 RAW_FILE_NAME="$FILE_NAME"
 FILE_NAME="$(ensure_conf_name "$FILE_NAME")"
 TARGET_FILE="$TARGET_DIR/$FILE_NAME"
 SYMLINK_FILE="$SYMLINK_DIR/$FILE_NAME"
 
-if [ ! -f "$SOURCE_TEMPLATE" ]; then
-  echo -e "${RED}[ERROR]${NC} Source template not found: $SOURCE_TEMPLATE"
+if [ ! -f "$SOURCE_FILE" ]; then
+  echo -e "${RED}[ERROR]${NC} Source nginx conf not found: $SOURCE_FILE"
   exit 1
 fi
 
 if [ "$DRY_RUN" -eq 1 ]; then
-  echo -e "${YELLOW}[DRY-RUN]${NC} Source: $SOURCE_TEMPLATE"
+  echo -e "${YELLOW}[DRY-RUN]${NC} Source: $SOURCE_FILE"
   echo -e "${YELLOW}[DRY-RUN]${NC} Target: $TARGET_FILE"
   [ "$SKIP_SYMLINK" -eq 0 ] && echo -e "${YELLOW}[DRY-RUN]${NC} Symlink: $SYMLINK_FILE"
   if [ "$RAW_FILE_NAME" != "$FILE_NAME" ]; then
@@ -146,7 +162,7 @@ ensure_root_or_sudo "$@"
 mkdir -p "$TARGET_DIR"
 mkdir -p "$SYMLINK_DIR"
 cleanup_legacy_site_name "$RAW_FILE_NAME" "$FILE_NAME"
-cp "$SOURCE_TEMPLATE" "$TARGET_FILE"
+cp "$SOURCE_FILE" "$TARGET_FILE"
 chmod 644 "$TARGET_FILE"
 
 if [ "$SKIP_SYMLINK" -eq 0 ]; then

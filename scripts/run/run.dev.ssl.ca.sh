@@ -24,6 +24,20 @@ SAFE_APP_NAME="${SAFE_APP_NAME// /-}"
 SAFE_APP_NAME="${SAFE_APP_NAME,,}"
 CERT_NICKNAME="${SAFE_APP_NAME}-step-ca"
 
+ensure_sudo_session() {
+    if [ "$(id -u)" -eq 0 ]; then
+        return 0
+    fi
+
+    if ! command -v sudo >/dev/null 2>&1; then
+        echo -e "${RED}[ERROR]${NC} This script needs sudo to install the Root CA into the OS trust store."
+        exit 1
+    fi
+
+    echo -e "${YELLOW}[INFO]${NC} Administrator privilege is required to install the Root CA into the system trust store."
+    sudo -v
+}
+
 echo -e "${CYAN}"
 echo "=========================================================="
 echo "   INSTALL STEP CA ROOT CERTIFICATE KE TRUST STORE"
@@ -47,12 +61,14 @@ echo -e "${CYAN}[1/3] Menginstall ke System Trust Store (OS)...${NC}"
 
 if command -v update-ca-certificates &>/dev/null; then
     # Ubuntu/Debian
+    ensure_sudo_session
     sudo cp "$ROOT_CA_FILE" "/usr/local/share/ca-certificates/${CERT_NICKNAME}.crt"
     sudo update-ca-certificates
     echo -e "${GREEN}    ✓ Berhasil install ke Ubuntu/Debian trust store${NC}"
 
 elif command -v update-ca-trust &>/dev/null; then
     # Fedora/RHEL/Arch
+    ensure_sudo_session
     sudo cp "$ROOT_CA_FILE" "/etc/pki/ca-trust/source/anchors/${CERT_NICKNAME}.pem"
     sudo update-ca-trust extract
     echo -e "${GREEN}    ✓ Berhasil install ke Fedora/RHEL/Arch trust store${NC}"

@@ -28,11 +28,11 @@ Options:
   --help               Tampilkan bantuan
 
 Target valid:
-  app, api, s3, s3-console, grafana, pma, reverb, hmr
+  app, cms, s3, s3-console, grafana, pma, hmr
 
 Contoh:
-  $0 --only=app,api,reverb
-  $0 --only=app,api --exclude=api
+  $0 --only=app,cms
+  $0 --only=app,cms --exclude=pma
   $0 --include=s3 --include=s3-console --ip=10.10.10.20
 EOF
 }
@@ -159,15 +159,14 @@ load_env_file "$ROOT_DIR/.env.devops"
 
 declare -A HOST_SOURCES
 HOST_SOURCES[app]="${APP_DOMAIN}"
-HOST_SOURCES[api]="${API_DOMAIN:-${API_URL}}"
+HOST_SOURCES[cms]="${CMS_DOMAIN:-${CMS_URL}}"
 HOST_SOURCES[s3]="${S3_DOMAIN:-${S3_URL}}"
 HOST_SOURCES[s3-console]="${S3_CONSOLE_DOMAIN:-${S3_CONSOLE_URL}}"
 HOST_SOURCES[grafana]="${GRAFANA_URL}"
 HOST_SOURCES[pma]="${PMA_DOMAIN:-${PMA_ABSOLUTE_URI:-${PHPMYADMIN_URL}}}"
-HOST_SOURCES[reverb]="${REVERB_DOMAIN:-${REVERB_URL}}"
 HOST_SOURCES[hmr]="${HMR_URL}"
 
-VALID_TARGETS=(app api s3 s3-console grafana pma reverb hmr)
+VALID_TARGETS=(app cms s3 s3-console grafana pma hmr)
 
 echo "🌐 Setup hosts entries (IP: $IP)"
 

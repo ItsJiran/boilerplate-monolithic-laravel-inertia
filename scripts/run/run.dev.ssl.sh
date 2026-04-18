@@ -1,162 +1,257 @@
-#!/usr/bin/env bash
-set -euo pipefail
+#!/bin/bash
 
-# --- Setup path & env ---
+# =========================================================
+# DEVELOPMENT SSL SETUP (STEP CA)
+# =========================================================
+# Mimics run.prod.ssl.sh behavior but uses local Step CA.
+# Generates certificates for specified domains.
+#
+# Usage:
+#   ./run.dev.ssl.sh --domain=app.test --domain=api.app.test
+#   ./run.dev.ssl.sh --domains=app.test,api.app.test,s3.app.test
+#
+# =========================================================
+
+set -e
+
+# --- Colors ---
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m'
+
+# --- Variables Defaults ---
+DOMAINS=()
+OUTPUT_DIR="/etc/nginx/ssl"
+
+# Env variables for Step CA connection
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(dirname "$(dirname "$SCRIPT_DIR")")"
 ENV_FILE="$ROOT_DIR/.env"
 
-if [[ ! -f "$ENV_FILE" ]]; then
-  echo "❌ File .env tidak ditemukan di $ENV_FILE" >&2
-  exit 1
+if [[ -f "$ENV_FILE" ]]; then
+  set -a; source "$ENV_FILE"; set +a
 fi
 
-set -a; . "$ENV_FILE"; set +a
+CA_PROVISIONER="${STEP_CA_PROVISIONER:-admin}"
+CA_PASSWORD="${STEP_CA_PASSWORD:-changeme}" # Password for provisioner (be careful)
+SUDO_REQUIRED=0
 
-if [[ -z "${APP_DOMAIN:-}" ]]; then
-  echo '❌ APP_DOMAIN harus ada di .env' >&2
-  exit 1
-fi
+ensure_output_dir() {
+    local dir="$1"
+    local parent_dir
 
-# --- Konfigurasi Step CA ---
-STEP_CA_PORT="${STEP_CA_PORT:-9000}"
-STEP_CA_PROVISIONER="${STEP_CA_PROVISIONER:-admin}"
-STEP_CA_PASSWORD="${STEP_CA_PASSWORD:-changeme}"
-CONTAINER_NAME="${APP_SLUG:-app-boilerplate}-step-ca"
-CA_URL="${STEP_CA_URL:-https://localhost:${STEP_CA_PORT}}"
+    if [ -d "$dir" ]; then
+        if [ -w "$dir" ]; then
+            return 0
+        fi
 
-# --- Penamaan file ---
-SAFE_APP_NAME="${APP_NAME:-$APP_DOMAIN}"
-SAFE_APP_NAME="${SAFE_APP_NAME// /-}"
-SAFE_APP_NAME="${SAFE_APP_NAME,,}"
-
-CSR_LOCAL="$ROOT_DIR/gen-${SAFE_APP_NAME}.csr"
-KEY_LOCAL="$ROOT_DIR/gen-${SAFE_APP_NAME}.key"
-CERT_LOCAL="$ROOT_DIR/gen-${SAFE_APP_NAME}.crt"
-ROOT_CA_FILE="$ROOT_DIR/step-ca-public-root.pem"
-
-echo "=========================================================="
-echo "          MEMBUAT SSL CERTIFICATE SECARA LOKAL            "
-echo "=========================================================="
-
-# 1. Pastikan container CA menyala
-if ! docker inspect --format '{{.State.Running}}' "$CONTAINER_NAME" 2>/dev/null | grep -q true; then
-  echo "❌ Container '$CONTAINER_NAME' tidak berjalan. Silahkan nyalakan Step CA." >&2
-  exit 1
-fi
-
-# ==========================================================
-# Pastikan tidak ada file lama yang terkunci oleh root
-# hal ini terjadi jika script sebelumnya dijalankan via sudo
-# ==========================================================
-for file in "$KEY_LOCAL" "$CSR_LOCAL" "$CERT_LOCAL" "$ROOT_CA_FILE"; do
-    if [ -f "$file" ] && [ ! -w "$file" ]; then
-        echo "⚠️  Menghapus file lama yang terkunci oleh root: $file"
-        sudo rm -f "$file"
+        SUDO_REQUIRED=1
+        return 0
     fi
-done
 
-echo ""
-echo "🔐 1. Mengunduh Public Root CA dari Step CA..."
-# Download root public key (step-ca-public-root.pem)
-curl -s -k "${CA_URL}/roots.pem" > "$ROOT_CA_FILE"
+    parent_dir="$(dirname "$dir")"
+    while [ ! -d "$parent_dir" ] && [ "$parent_dir" != "/" ]; do
+        parent_dir="$(dirname "$parent_dir")"
+    done
 
-if [[ ! -s "$ROOT_CA_FILE" ]]; then
-  echo "❌ Gagal mengunduh Root CA dari ${CA_URL}/roots.pem" >&2
-  exit 1
-fi
-
-echo ""
-echo "🔐 2. Membuat Server CSR & Private Key lokal (gen-${SAFE_APP_NAME})..."
-# Kumpulkan semua URL dari .env sebagai SAN
-SANS=()
-for VAR in API_URL REVERB_URL S3_URL S3_CONSOLE_URL HMR_URL; do
-  VAL="${!VAR:-}"
-  if [[ -n "$VAL" ]]; then
-    SANS+=("--san" "$VAL")
-  fi
-done
-SANS+=("--san" "$APP_DOMAIN")
-SANS+=("--san" "*.$APP_DOMAIN")
-SANS+=("--san" "localhost")
-SANS+=("--san" "127.0.0.1")
-
-step-cli certificate create "$APP_DOMAIN" "$CSR_LOCAL" "$KEY_LOCAL" \
-  --csr --insecure --no-password --force "${SANS[@]}"
-
-echo ""
-echo "🔐 3. Signing Server CSR via HTTP ke Step CA..."
-echo "$STEP_CA_PASSWORD" | step-cli ca sign "$CSR_LOCAL" "$CERT_LOCAL" \
-  --ca-url "$CA_URL" --root "$ROOT_CA_FILE" \
-  --provisioner "$STEP_CA_PROVISIONER" \
-  --provisioner-password-file /dev/stdin --force
-
-# --- Mengkonfigurasi Nginx SSL ---
-SSL_DIR="/etc/nginx/ssl"
-CERT_FILE="$SSL_DIR/${SAFE_APP_NAME}.pem"
-KEY_FILE="$SSL_DIR/${SAFE_APP_NAME}.key"
-
-echo ""
-echo "🔐 4. Mengkonfigurasi Nginx SSL (Membutuhkan akses Sudo)..."
-sudo mkdir -p "$SSL_DIR"
-sudo cp "$CERT_LOCAL" "$CERT_FILE"
-sudo cp "$KEY_LOCAL" "$KEY_FILE"
-# Abaikan error jika user nginx belum ada di host
-sudo chown nginx:nginx "$CERT_FILE" "$KEY_FILE" 2>/dev/null || true
-sudo chmod 640 "$CERT_FILE" "$KEY_FILE" 2>/dev/null || true
-
-# --- Update .env ---
-update_env_var() {
-  local key="$1" value="$2"
-  
-  # 1. Cek apakah key sudah ada
-  if grep -qE "^${key}=" "$ENV_FILE"; then
-    # REPLACE MODE
-    # Coba sebagai user biasa dulu karena .env ada di user space
-    sed -i -E "s#^${key}=.*#${key}=${value}#" "$ENV_FILE" 2>/dev/null || \
-    sudo sed -i -E "s#^${key}=.*#${key}=${value}#" "$ENV_FILE"
-  else
-    # APPEND MODE
-    # Pastikan file berakhir dengan newline agar tidak menimpa baris terakhir
-    if [ -w "$ENV_FILE" ]; then
-         if [ -n "$(tail -c1 "$ENV_FILE")" ]; then echo "" >> "$ENV_FILE"; fi
-         echo "${key}=${value}" >> "$ENV_FILE"
-    else
-         # Fallback sudo: Cek last char via sudo tail
-         if [ -n "$(sudo tail -c1 "$ENV_FILE")" ]; then echo "" | sudo tee -a "$ENV_FILE" >/dev/null; fi
-         echo "${key}=${value}" | sudo tee -a "$ENV_FILE" >/dev/null
+    if [ -w "$parent_dir" ]; then
+        mkdir -p "$dir"
+        return 0
     fi
-  fi
+
+    SUDO_REQUIRED=1
 }
 
-update_env_var "SSL_CERT_PATH" "$CERT_FILE"
-update_env_var "SSL_KEY_PATH" "$KEY_FILE"
-update_env_var "NODE_EXTRA_CA_CERTS" "$ROOT_CA_FILE"
+ensure_sudo_session() {
+    if [ "$SUDO_REQUIRED" -ne 1 ] || [ "$(id -u)" -eq 0 ]; then
+        return 0
+    fi
 
+    if ! command -v sudo >/dev/null 2>&1; then
+        echo -e "${RED}[ERROR] sudo is required to write into: $OUTPUT_DIR${NC}"
+        exit 1
+    fi
+
+    echo -e "${YELLOW}[INFO] Administrator privilege is required to write certificates into $OUTPUT_DIR.${NC}"
+    sudo -v
+}
+
+install_output_file() {
+    local source_file="$1"
+    local destination_file="$2"
+    local mode="$3"
+
+    if [ "$SUDO_REQUIRED" -eq 1 ] && [ "$(id -u)" -ne 0 ]; then
+        sudo mkdir -p "$OUTPUT_DIR"
+        sudo install -m "$mode" "$source_file" "$destination_file"
+    else
+        install -m "$mode" "$source_file" "$destination_file"
+    fi
+}
+
+usage() {
+        cat <<EOF
+Usage: $0 [options]
+
+Options:
+    --domain=VALUE       Domain/URL manual (can be repeated)
+    --domains=LIST       List of domains (comma separated)
+    --output-dir=DIR     Directory to save certificates (default: /etc/nginx/ssl)
+    --help               Show help
+
+Example:
+    $0 --domains=app.test,api.app.test
+EOF
+}
+
+extract_host() {
+        local value="$1"
+        local host="$value"
+        host="${host#http://}"
+        host="${host#https://}"
+        host="${host%%/*}"
+        host="${host%%:*}"
+        echo "$host"
+}
+
+add_domain_unique() {
+        local candidate
+        candidate="$(extract_host "$1")"
+        [ -z "$candidate" ] && return
+
+        local existing
+        for existing in "${DOMAINS[@]}"; do
+                [ "$existing" = "$candidate" ] && return
+        done
+        DOMAINS+=("$candidate")
+}
+
+# --- Argument Parsing ---
+while [[ "$#" -gt 0 ]]; do
+    case $1 in
+        --domains=*)
+            IFS=',' read -r -a domain_list <<< "${1#*=}"
+            for item in "${domain_list[@]}"; do
+                add_domain_unique "$item"
+            done
+            ;;
+        --domain=*) add_domain_unique "${1#*=}" ;;
+        --domain) add_domain_unique "$2"; shift ;;
+        --output-dir=*) OUTPUT_DIR="${1#*=}" ;;
+        --help)
+            usage
+            exit 0
+            ;;
+        *) echo "Unknown parameter passed: $1"; exit 1 ;;
+    esac
+    shift
+done
+
+if [ ${#DOMAINS[@]} -eq 0 ]; then
+    echo -e "${RED}[ERROR] No domains provided.${NC}"
+    usage
+    exit 1
+fi
+
+ensure_output_dir "$OUTPUT_DIR"
+ensure_sudo_session
+
+CONTAINER_NAME="${APP_SLUG:-app}-step-ca"
+
+# Verify container is running
+if ! docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
+  echo -e "${RED}[ERROR] Step CA container '${CONTAINER_NAME}' is not running.${NC}"
+  echo "Please start the step-ca service first (e.g., ./run.sh run.step-ca.sh)"
+  exit 1
+fi
+
+echo -e "${BLUE}=========================================================${NC}"
+echo -e "${BLUE}       SSL CERTIFICATE GENERATION (STEP CA)              ${NC}"
+echo -e "${BLUE}=========================================================${NC}"
+echo -e "Domains    : ${YELLOW}${DOMAINS[*]}${NC}"
+echo -e "Output Dir : ${YELLOW}$OUTPUT_DIR${NC}"
+echo -e "Container  : ${YELLOW}$CONTAINER_NAME${NC}"
 echo ""
-echo "🔐 7. Menyalin file sertifikat ke direktori build kontainer (app-server & app-clients)..."
-for BUILD_CTX_DIR in "$ROOT_DIR/app"; do
-  if [[ -d "$BUILD_CTX_DIR" ]]; then
-    # Fallback aman ke sudo bila file lama terkunci root
-    cp "$ROOT_CA_FILE" "$BUILD_CTX_DIR/step-ca-public-root.pem" 2>/dev/null || sudo cp "$ROOT_CA_FILE" "$BUILD_CTX_DIR/step-ca-public-root.pem"
-    sudo chown "${USER:-$(id -un)}:${USER:-$(id -gn)}" "$BUILD_CTX_DIR/step-ca-public-root.pem" 2>/dev/null || true
+
+FAILED_DOMAINS=()
+TMP_DIR="$(mktemp -d)"
+trap 'rm -rf "$TMP_DIR"' EXIT
+
+for DOMAIN in "${DOMAINS[@]}"; do
+    echo -e "${BLUE}  → Generating for: $DOMAIN ...${NC}"
     
-    cp "$CERT_LOCAL" "$BUILD_CTX_DIR/gen-${SAFE_APP_NAME}.crt" 2>/dev/null || sudo cp "$CERT_LOCAL" "$BUILD_CTX_DIR/gen-${SAFE_APP_NAME}.crt"
-    sudo chown "${USER:-$(id -un)}:${USER:-$(id -gn)}" "$BUILD_CTX_DIR/gen-${SAFE_APP_NAME}.crt" 2>/dev/null || true
+    # Generate inside container to avoid complex host setup
+    # Using 'step ca certificate' command
+    # We use a temporary path inside container
+    TMP_CRT="/tmp/${DOMAIN}.crt"
+    TMP_KEY="/tmp/${DOMAIN}.key"
+
+    # Execute step command inside container
+    # Note: We pass the password via stdin or --password-file
+    # Creating a password file inside container temporarily
     
-    echo "✅ Disalin ke: $BUILD_CTX_DIR/"
-  fi
+    docker exec "$CONTAINER_NAME" bash -c "echo '$CA_PASSWORD' > /tmp/pwd && step ca certificate '$DOMAIN' '$TMP_CRT' '$TMP_KEY' --provisioner='$CA_PROVISIONER' --password-file=/tmp/pwd --force && rm /tmp/pwd" \
+    || { FAILED_DOMAINS+=("$DOMAIN"); continue; }
+
+    # Copy files out to host via a user-owned temp directory, then install them.
+    LOCAL_CRT="$TMP_DIR/${DOMAIN}.crt"
+    LOCAL_KEY="$TMP_DIR/${DOMAIN}.key"
+    docker cp "$CONTAINER_NAME:$TMP_CRT" "$LOCAL_CRT"
+    docker cp "$CONTAINER_NAME:$TMP_KEY" "$LOCAL_KEY"
+    install_output_file "$LOCAL_CRT" "$OUTPUT_DIR/${DOMAIN}.crt" 644
+    install_output_file "$LOCAL_KEY" "$OUTPUT_DIR/${DOMAIN}.key" 600
+    
+    # Cleanup inside
+    docker exec "$CONTAINER_NAME" rm "$TMP_CRT" "$TMP_KEY"
+
+    echo -e "${GREEN}    Done: $OUTPUT_DIR/${DOMAIN}.crt${NC}"
 done
 
 echo ""
-echo "✅ BERHASIL! Script Selesai Dijalankan."
-echo "   - Root Public CA  : $ROOT_CA_FILE"
-echo "   - Server Cert     : $CERT_LOCAL"
-echo "   - Nginx Cert      : $CERT_FILE"
+if [ ${#FAILED_DOMAINS[@]} -eq 0 ]; then
+    echo -e "${GREEN}SUCCESS! Certificates generated for all domains.${NC}"
+else
+    echo -e "${RED}FAILED for: ${FAILED_DOMAINS[*]}${NC}"
+    exit 1
+fi
+
+# --- Download Root CA Certificate ---
 echo ""
-echo "📋 Generate nginx host config dengan cert ini (shared SAN cert untuk semua domain):"
-echo "   bash scripts/setup/setup-nginx-host.sh \\"
-echo "     --app-domain=\$APP_DOMAIN \\"
-echo "     --ssl-cert=$CERT_FILE \\"
-echo "     --ssl-key=$KEY_FILE \\"
-echo "     [--reverb-domain=... --s3-domain=... --hmr-domain=... --dry-run]"
+echo -e "${BLUE}Copying Root CA Certificate to project root...${NC}"
+
+ROOT_CA_FILE="$ROOT_DIR/step-ca-public-root.pem"
+
+ROOT_CA_CANDIDATES=(
+    "/home/step/certs/root_ca.crt"
+    "/etc/step-ca/certs/root_ca.crt"
+)
+
+ROOT_CA_COPIED=0
+for cert_path in "${ROOT_CA_CANDIDATES[@]}"; do
+    if docker exec "$CONTAINER_NAME" sh -lc "test -f '$cert_path'"; then
+        docker cp "$CONTAINER_NAME:$cert_path" "$ROOT_CA_FILE"
+        ROOT_CA_COPIED=1
+        break
+    fi
+done
+
+if [ "$ROOT_CA_COPIED" -eq 1 ] && grep -q "BEGIN CERTIFICATE" "$ROOT_CA_FILE"; then
+    echo -e "${GREEN}✓ Root CA copied to: $ROOT_CA_FILE${NC}"
+else
+    # Last fallback: generate from CA home used by step-ca image.
+    if docker exec "$CONTAINER_NAME" sh -lc "step certificate bundle /home/step/certs/intermediate_ca.crt /home/step/certs/root_ca.crt > /tmp/ca.pem" \
+        && docker cp "$CONTAINER_NAME:/tmp/ca.pem" "$ROOT_CA_FILE" \
+        && docker exec "$CONTAINER_NAME" rm -f /tmp/ca.pem \
+        && grep -q "BEGIN CERTIFICATE" "$ROOT_CA_FILE"; then
+        echo -e "${GREEN}✓ Root CA bundle created and copied to: $ROOT_CA_FILE${NC}"
+    else
+        echo -e "${RED}✗ Could not export Root CA certificate to: $ROOT_CA_FILE${NC}"
+        exit 1
+    fi
+fi
+
+echo ""
+echo -e "${GREEN}✅ ALL DONE!${NC}"
+echo -e "${YELLOW}Next: ./run.sh run.dev.ssl.ca.sh${NC}"

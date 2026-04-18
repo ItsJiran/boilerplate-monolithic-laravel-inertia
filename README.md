@@ -128,39 +128,6 @@ This project uses a **Continuous Delivery (CD)** strategy with a strict **"No So
 
 See [DEPLOYMENT.md](DEPLOYMENT.md) for full details.
 
-### Modular Deployment Pattern (Micro Scripts)
-
-To keep CI/CD easy to read and customize, deployment should be composed from small scripts instead of one large script.
-
-Recommended structure:
-
-```bash
-scripts/deploy/
-├── steps/
-│   ├── 10-prepare-env.sh
-│   ├── 20-pull-image.sh
-│   ├── 30-setup-nginx-template.sh
-│   ├── 35-setup-nginx-host-template.sh
-│   ├── 36-deploy-nginx-host-conf.sh
-│   ├── 40-migrate.sh
-│   ├── 50-up-services.sh
-│   └── 60-healthcheck.sh
-└── deploy.pipeline.sh
-```
-
-Guidelines:
-- Each step script handles one concern and is idempotent.
-- `deploy.pipeline.sh` only orchestrates step order and selected modules.
-- CI workflow composes steps based on deployment target (full app, worker-only, socket-only, etc).
-- Service separation is done in workflow combinations, not by duplicating large deployment scripts.
-
-Example composition:
-
-```bash
-bash scripts/deploy/deploy.pipeline.sh --steps=prepare-env,pull-image,setup-nginx,up-services
-bash scripts/deploy/deploy.pipeline.sh --steps=prepare-env,pull-image,up-services --services=app-worker,app-socket
-```
-
 ### Exporters (`infra/docker-compose.devops.exporter.yml`)
 
 | Service | Function |
@@ -194,7 +161,7 @@ Run the following steps in sequence.
 ```
 
 This will copy `.env.example` → `.env`, `.env.backend`, `.env.devops`.
-Edit these files as needed (minimally: `APP_DOMAIN`, `DB_PASSWORD`, `APP_SLUG`).
+Edit these files as needed (minimally: `APP_URL`, `DB_PASSWORD`, `APP_SLUG`).
 
 ### 2. Setup Local Hosts
 
@@ -203,68 +170,16 @@ sudo ./setup.sh
 # Select: setup-hosts.sh
 ```
 
-Adds selected domains from `.env`/`.env.devops` to `/etc/hosts` → `127.0.0.1`.
+Adds all domains from `.env` (`APP_URL`, `API_URL`, `S3_URL`, `S3_CONSOLE_URL`, `GRAFANA_URL`, `PHPMYADMIN_URL`) to `/etc/hosts` → `127.0.0.1`.
 
-Examples:
-```bash
-sudo scripts/setup/setup-hosts.sh --only=app,api,reverb
-sudo scripts/setup/setup-hosts.sh --only=app,s3,s3-console,pma,grafana
-sudo scripts/setup/setup-hosts.sh --only=app,api --exclude=api
-```
-
-Supported targets: `app`, `api`, `s3`, `s3-console`, `grafana`, `pma`, `reverb`, `hmr`.
-
-### 3. Setup Nginx (LB Template + VPS Host Template + Deploy)
+### 3. Setup Nginx Virtual Host on Host Machine
 
 ```bash
 sudo ./setup.sh
-# Select: setup-nginx-template.sh
+# Select: setup-nginx-host.sh
 ```
 
-Flow baru dibagi jadi 3 script agar modular dan bisa dijalankan 1-1 per domain/service:
-
-1) Generate LB template (dipakai container nginx di Docker):
-```bash
-./setup.sh setup-nginx-template.sh --single --service=app --domain=myapp.test
-./setup.sh setup-nginx-template.sh --single --service=reverb --domain=reverb.myapp.test
-./setup.sh setup-nginx-template.sh --single --service=s3 --domain=s3.myapp.test
-```
-
-Output default: `infra/nginx/default.conf.lb.template`
-
-2) Generate host VPS template (untuk nginx host):
-```bash
-./setup.sh setup-nginx-host-template.sh --single --service=app --domain=myapp.test --ssl-mode=letsencrypt
-./setup.sh setup-nginx-host-template.sh --single --service=reverb --domain=reverb.myapp.test --ssl-mode=letsencrypt
-./setup.sh setup-nginx-host-template.sh --single --service=s3 --domain=s3.myapp.test --ssl-mode=letsencrypt
-```
-
-Output default: `infra/nginx/default.conf.vps.template`
-
-3) Deploy host template ke nginx VPS (`sites-available/*.conf`):
-```bash
-sudo ./setup.sh setup-nginx-host.sh \
-  --source=infra/nginx/default.conf.vps.template \
-  --file-name=myapp.com.conf
-```
-
-Optional deploy args:
-```bash
-sudo ./setup.sh setup-nginx-host.sh \
-  --source=infra/nginx/default.conf.vps.template \
-  --file-name=myapp.com.conf \
-  --copy-to=/backup/nginx/myapp.com.conf \
-  --skip-reload
-```
-
-Notes:
-- Semua generation pakai pola **single 1-1**, jalankan berulang per service/domain.
-- LB template dipakai oleh docker nginx container (`default.conf.template`).
-- Host template hasil generate dideploy ke `/etc/nginx/sites-available/<name>.conf`.
-- SSL mode di `setup-nginx-host-template.sh`:
-  - `letsencrypt` -> `/etc/letsencrypt/live/<domain>/fullchain.pem`
-  - `stepca` -> `/etc/nginx/ssl/<domain>.pem` dan `.key`
-  - `manual` -> `--ssl-cert` + `--ssl-key`
+Creates Nginx configuration in `/etc/nginx/sites-available/` and symlinks it to `/etc/nginx/sites-enabled/` so local domains are routed to the load balancer port.
 
 ### 4. Setup SSL Development
 
@@ -288,18 +203,6 @@ Notes:
 ```
 
 > **Production**: Use Let's Encrypt. See `infra/LETSENCRYPT.md`.
-
-Example (argument-based SSL domains, one cert per domain):
-```bash
-bash scripts/run/run.prod.ssl.sh --domains=myapp.com,api.myapp.com,reverb.myapp.com --email admin@myapp.com
-# or repeated manual domains:
-bash scripts/run/run.prod.ssl.sh --domain=myapp.com --domain=api.myapp.com --email admin@myapp.com
-```
-
-Result:
-- Certbot dijalankan 1x per domain (`-d <domain>`), sehingga setiap domain punya path sendiri:
-- `/etc/letsencrypt/live/myapp.com/fullchain.pem`
-- `/etc/letsencrypt/live/api.myapp.com/fullchain.pem`
 
 ### 5. Setup Monitoring Config
 
@@ -343,19 +246,6 @@ Interactive script with **checkbox selector** — select specific services to op
 | `down` | Stop and remove container |
 | `stop` | Stop without removing container |
 | `volume` | Manage / recreate volume |
-
-For non-interactive (CI/deploy), you can run selected services modularly:
-
-```bash
-# Up selected services at once
-./run.sh run.app.sh up --build --services=app,app-worker,app-socket
-
-# Up selected services one-by-one (safer for staged startup)
-./run.sh run.app.sh up --build --one-by-one --services=mariadb,redis,app
-
-# Stop only selected services
-./run.sh run.app.sh down --services=app-hmr,phpmyadmin
-```
 
 ### Run Monitoring
 
